@@ -24,6 +24,48 @@ Or install it yourself as:
 
 TODO: Write usage instructions here
 
+## Control Flow Graph
+
+### Intermediate Language
+
+Control flow graph is constructed from the following intermediate language.
+Differences from Ruby are:
+
+* Prohibit arbitrary expressions but variables some places
+* If and whiles are statement, not an expression
+* Introduces pseud variable; semantically a local variable, but not defined in source language
+
+```rb
+stmt ::= ()
+       | stmt; ...
+       | expr
+       | a = expr
+       | if expr then stmt else stmt end
+       | while expr do stmt end
+       | def f(x...) stmt end
+       | class C < C stmt end
+       | return a
+       | break a
+       | next a
+       | retry a
+       | begin stmt rescue stmt end
+
+expr ::= 
+       | a.f(a...)
+       | a.f(a...) do stmt end
+       | a
+       | yield a...
+
+a ::= x   # local variable
+    | i   # pseud variable
+    | @a  # instance variable
+    | C   # constant
+```
+
+### Graph
+
+Vertex of control flow graph is a `stmt` of the intermediate language.
+
 ## Development
 
 After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake test` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
