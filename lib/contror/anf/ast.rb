@@ -160,6 +160,15 @@ module Contror
             super(node: node)
           end
         end
+
+        class Array < Base
+          attr_reader :elements
+
+          def initialize(elements:, node:)
+            @elements = elements
+            super(node: node)
+          end
+        end
       end
 
       module Variable

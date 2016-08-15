@@ -79,6 +79,52 @@ class ANFTranslatorTest < Minitest::Test
     end
   end
 
+  def test_translate_literals
+    translate("f(1, 1.0, 'a', :b, true, false, self, nil, 1i, 1r)") do |ast|
+      assert_instance_of AST::Stmt::Expr, ast
+      assert_instance_of AST::Expr::Call, ast.expr
+    end
+  end
+
+  def test_translate_array
+    translate("[1, true, false, nil]") do |ast|
+      assert_instance_of AST::Stmt::Expr, ast
+      assert_instance_of AST::Expr::Array, ast.expr
+
+      ast.expr.elements.each do |elem|
+        assert_instance_of AST::Expr::Value, elem
+      end
+    end
+
+    translate("[@a]") do |ast|
+      assert_instance_of AST::Stmt::Expr, ast
+      assert_instance_of AST::Expr::Array, ast.expr
+
+      iv = ast.expr.elements.first
+      assert_instance_of AST::Expr::Var, iv
+      assert_equal :"@a", iv.var.name
+    end
+
+    # array elements should be value
+    translate("[f()]") do |ast|
+      assert_instance_of AST::Stmt::Block, ast
+
+      # _1 = f()
+      assign = ast.stmts[0]
+      assert_instance_of AST::Stmt::Assign, assign
+      assert_instance_of AST::Variable::Pseud, assign.var
+      assert_instance_of AST::Expr::Call, assign.expr
+      assert_equal :f, assign.expr.name
+
+      # [_1]
+      array = ast.stmts[1]
+      assert_instance_of AST::Stmt::Expr, array
+      assert_instance_of AST::Expr::Array, array.expr
+      assert_instance_of AST::Expr::Var, array.expr.elements[0]
+      assert_equal assign.var, array.expr.elements[0].var
+    end
+  end
+
   def test_translate_if
     src = <<-EOS
       if a

@@ -155,6 +155,19 @@ module Contror
             translate_constant_assign(node, var: a, stmts: stmts)
             AST::Expr::Var.new(var: a, node: nil)
 
+          when :array
+            array = []
+
+            node.children.each do |child|
+              if value_node?(child)
+                array << translate_expr(child, stmts: stmts)
+              else
+                array << normalized_expr(child, stmts: stmts)
+              end
+            end
+
+            AST::Expr::Array.new(elements: array, node: array)
+
           else
             p unknown_node: node
           end
@@ -177,9 +190,13 @@ module Contror
 
       def value_node?(node)
         case node.type
-        when :int, :lvar, :ivar, :gvar, :cvar
+        when :lvar, :ivar, :gvar, :cvar
           true
-        when :true, :false, :nil
+        when :true, :false
+          true
+        when :float, :str, :sym, :int, :complex, :rational
+          true
+        when :self, :nil
           true
         else
           false
