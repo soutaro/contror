@@ -32,28 +32,10 @@ module Contror
         else
           case node.type
           when :lvasgn, :ivasgn, :gvasgn, :cvasgn
-            v = translate_var(node)
-            stmts << AST::Stmt::Assign.new(var: v,
-                                           expr: translate_expr(node.children[1], stmts: stmts),
-                                           node: node)
-
-            if var
-              stmts << AST::Stmt::Assign.new(var: var, expr: AST::Expr::Var.new(var: v, node: nil))
-            end
+            translate_assign(node, var: var, stmts: stmts)
 
           when :casgn
-            if (prefix_node = node.children[0])
-              prefix = normalized_expr(prefix_node, stmts: stmts)
-            end
-
-            stmts << AST::Stmt::ConstantAssign.new(prefix: prefix,
-                                                   name: node.children[1],
-                                                   expr: translate_expr(node.children[2], stmts: stmts),
-                                                   node: node)
-
-            if var
-              stmts << AST::Stmt::Assign.new(var: var, expr: AST::Expr::Var.new(var: v, node: nil))
-            end
+            translate_constant_assign(node, var: var, stmts: stmts)
 
           when :if
             condition = normalized_expr(node.children[0], stmts: stmts)
@@ -91,6 +73,36 @@ module Contror
         end
 
         stmts << AST::Stmt::While.new(condition: condition, body: body, break_var: break_var, node: node)
+      end
+
+      def translate_assign(node, var:, stmts:)
+        v = translate_var(node)
+        stmts << AST::Stmt::Assign.new(var: v,
+                                       expr: translate_expr(node.children[1], stmts: stmts),
+                                       node: node)
+
+        if var
+          stmts << AST::Stmt::Assign.new(var: var,
+                                         expr: AST::Expr::Var.new(var: v, node: nil),
+                                         node: node)
+        end
+      end
+
+      def translate_constant_assign(node, var:, stmts:)
+        if (prefix_node = node.children[0])
+          prefix = normalized_expr(prefix_node, stmts: stmts)
+        end
+
+        a = normalized_expr(node.children[2], stmts: stmts)
+
+        stmts << AST::Stmt::ConstantAssign.new(prefix: prefix,
+                                               name: node.children[1],
+                                               expr: a,
+                                               node: node)
+
+        if var
+          stmts << AST::Stmt::Assign.new(var: var, expr: a, node: nil)
+        end
       end
 
       def translate_expr(node, stmts:)
@@ -132,6 +144,16 @@ module Contror
             end
 
             AST::Expr::Constant.new(prefix: prefix, name: node.children[1], node: node)
+
+          when :lvasgn, :ivasgn, :cvasgn, :gvasgn
+            a = fresh_var
+            translate_assign(node, var: a, stmts: stmts)
+            AST::Expr::Var.new(var: a, node: nil)
+
+          when :casgn
+            a = fresh_var
+            translate_constant_assign(node, var: a, stmts: stmts)
+            AST::Expr::Var.new(var: a, node: nil)
 
           else
             p unknown_node: node
