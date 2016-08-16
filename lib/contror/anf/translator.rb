@@ -51,7 +51,7 @@ module Contror
           when :while
             translate_while(node, break_var: var, stmts: stmts)
 
-          when :def
+          when :def, :defs
             translate_def(node, var: var, stmts: stmts)
 
           else
@@ -92,8 +92,24 @@ module Contror
       end
 
       def translate_def(node, var:, stmts:)
-        name = node.children[0]
-        params = node.children[1].children.map do |arg_node|
+        case node.type
+        when :def
+          object_node = nil
+          name = node.children[0]
+          arg_nodes = node.children[1]
+          body_node = node.children[2]
+        when :defs
+          object_node = node.children[0]
+          name = node.children[1]
+          arg_nodes = node.children[2]
+          body_node = node.children[3]
+        else
+          raise "unknown def node: #{node.type}"
+        end
+
+        object = object_node && normalized_expr(object_node, stmts: stmts)
+
+        params = arg_nodes.children.map do |arg_node|
           arg_name = arg_node.children[0]
 
           case arg_node.type
@@ -104,9 +120,9 @@ module Contror
             [arg_node.type, arg_name]
           end
         end
-        body = node.children[2] && translate(node: node.children[2])
+        body = body_node && translate(node: body_node)
 
-        stmts << AST::Stmt::Def.new(var: var, object: nil, name: name, params: params, body: body, node: node)
+        stmts << AST::Stmt::Def.new(var: var, object: object, name: name, params: params, body: body, node: node)
       end
 
       def translate_constant_assign(node, var:, stmts:)
@@ -189,7 +205,7 @@ module Contror
 
             AST::Expr::Array.new(elements: array, node: array)
 
-          when :def
+          when :def, :defs
             a = fresh_var
             translate_def node, var: a, stmts: stmts
             AST::Expr::Var.new(var: a, node: nil)

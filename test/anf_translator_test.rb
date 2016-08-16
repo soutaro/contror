@@ -579,6 +579,46 @@ class ANFTranslatorTest < Minitest::Test
     end
   end
 
+  def test_translate_defs
+    translate "def (f()).g(); end" do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_assign_stmt stmts[0], var: AST::Variable::Pseud do |expr|
+          assert_call_expr expr, name: :f, receiver: nil do |args|
+            assert_empty args
+          end
+        end
+
+        def_stmt = stmts[1]
+        assert_instance_of AST::Stmt::Def, def_stmt
+        assert_equal :g, def_stmt.name
+        assert_equal [], def_stmt.params
+        assert_nil def_stmt.body
+
+        assert_instance_of AST::Expr::Var, def_stmt.object
+        assert_equal stmts[0].var, def_stmt.object.var
+      end
+    end
+  end
+
+  def assert_expr_stmt(stmt)
+    assert_instance_of AST::Stmt::Expr, stmt
+    yield stmt.expr
+  end
+
+  def assert_call_expr(expr, name:, receiver: nil)
+    assert_instance_of AST::Expr::Call, expr
+    assert_equal name, expr.name
+
+    case receiver
+    when Class
+      assert_instance_of receiver, expr.receiver
+    else
+      assert_equal receiver, expr.receiver
+    end
+
+    yield expr.args if block_given?
+  end
+
   def assert_block_stmt(stmt)
     assert_instance_of AST::Stmt::Block, stmt
     yield stmt.stmts
