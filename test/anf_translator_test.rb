@@ -79,6 +79,39 @@ class ANFTranslatorTest < Minitest::Test
     end
   end
 
+  def test_translate_call_with_block
+    translate("3.each do |x| end") do |ast|
+      assert_expr_stmt ast do |expr|
+        assert_call_expr expr, name: :each, receiver: AST::Expr::Value do |args, block|
+          assert_empty args
+
+          refute_nil block
+          assert_instance_of AST::Expr::IteratorBlock, block
+          assert_def_param block.params[0], type: :arg, name: :x
+          assert_nil block.body
+        end
+      end
+    end
+  end
+
+  def test_translate_call_with_block_pass
+    translate("5.each(&block)") do |ast, node|
+      assert_block_stmt ast do |stmts|
+        # _1 = block()
+        assert_assign_stmt stmts[0], var: AST::Variable::Pseud
+
+        # 5.each(&_1)
+        assert_expr_stmt stmts[1] do |expr|
+          assert_call_expr expr, name: :each, receiver: AST::Expr::Value do |args, block|
+            assert_instance_of AST::Expr::BlockPass, args[0]
+            assert_equal stmts[0].var, args[0].var
+            assert_nil block
+          end
+        end
+      end
+    end
+  end
+
   def test_translate_literals
     translate("f(1, 1.0, 'a', :b, true, false, self, nil, 1i, 1r)") do |ast|
       assert_instance_of AST::Stmt::Expr, ast
@@ -616,7 +649,7 @@ class ANFTranslatorTest < Minitest::Test
       assert_equal receiver, expr.receiver
     end
 
-    yield expr.args if block_given?
+    yield(expr.args, expr.block) if block_given?
   end
 
   def assert_block_stmt(stmt)

@@ -91,25 +91,8 @@ module Contror
         end
       end
 
-      def translate_def(node, var:, stmts:)
-        case node.type
-        when :def
-          object_node = nil
-          name = node.children[0]
-          arg_nodes = node.children[1]
-          body_node = node.children[2]
-        when :defs
-          object_node = node.children[0]
-          name = node.children[1]
-          arg_nodes = node.children[2]
-          body_node = node.children[3]
-        else
-          raise "unknown def node: #{node.type}"
-        end
-
-        object = object_node && normalized_expr(object_node, stmts: stmts)
-
-        params = arg_nodes.children.map do |arg_node|
+      def translate_params(args_node)
+        args_node.children.map do |arg_node|
           arg_name = arg_node.children[0]
 
           case arg_node.type
@@ -120,6 +103,26 @@ module Contror
             [arg_node.type, arg_name]
           end
         end
+      end
+
+      def translate_def(node, var:, stmts:)
+        case node.type
+        when :def
+          object_node = nil
+          name = node.children[0]
+          args_node = node.children[1]
+          body_node = node.children[2]
+        when :defs
+          object_node = node.children[0]
+          name = node.children[1]
+          args_node = node.children[2]
+          body_node = node.children[3]
+        else
+          raise "unknown def node: #{node.type}"
+        end
+
+        object = object_node && normalized_expr(object_node, stmts: stmts)
+        params = translate_params(args_node)
         body = body_node && translate(node: body_node)
 
         stmts << AST::Stmt::Def.new(var: var, object: object, name: name, params: params, body: body, node: node)
@@ -153,17 +156,7 @@ module Contror
         else
           case node.type
           when :send
-            receiver = if (receiver_node = node.children[0])
-                         normalized_expr(receiver_node, stmts: stmts)
-                       end
-
-            args = []
-
-            node.children.drop(2).each do |a|
-              args << normalized_expr(a, stmts: stmts)
-            end
-
-            AST::Expr::Call.new(receiver: receiver, name: node.children[1], args: args, block: nil, node: node)
+            translate_call(node, block: nil, stmts: stmts)
 
           when :if
             a = fresh_var
@@ -205,6 +198,21 @@ module Contror
 
             AST::Expr::Array.new(elements: array, node: array)
 
+          when :block
+            block_params = translate_params(node.children[1])
+            block_body = node.children[2] && translate(node: node.children[2])
+
+            translate_call(node.children[0],
+                           block: AST::Expr::IteratorBlock.new(params: block_params, body: block_body),
+                           stmts: stmts,
+                           node: node)
+
+          when :block_pass
+            a = normalized_expr(node.children[0], stmts: stmts)
+            raise "block-pass should have variable: #{node}, #{a}" unless a.is_a?(AST::Expr::Var)
+
+            AST::Expr::BlockPass.new(var: a.var, node: node)
+
           when :def, :defs
             a = fresh_var
             translate_def node, var: a, stmts: stmts
@@ -217,17 +225,41 @@ module Contror
         end
       end
 
+      def translate_call(call_node, block:, stmts:, node: call_node)
+        receiver = if (receiver_node = call_node.children[0])
+                     normalized_expr(receiver_node, stmts: stmts)
+                   end
+
+        args = []
+
+        call_node.children.drop(2).each do |a|
+          args << normalized_expr(a, stmts: stmts)
+        end
+
+        AST::Expr::Call.new(receiver: receiver,
+                            name: call_node.children[1],
+                            args: args,
+                            block: block,
+                            node: node)
+      end
+
       def normalized_expr(node, stmts:)
         if value_node?(node)
           translate_expr(node, stmts: stmts)
         else
-          a = fresh_var
           expr = translate_expr(node, stmts: stmts)
 
-          assign = AST::Stmt::Assign.new(var: a, expr: expr, node: node)
-          stmts << assign
+          case expr
+          when AST::Expr::BlockPass
+            expr
+          else
+            a = fresh_var
 
-          AST::Expr::Var.new(var: a, node: nil)
+            assign = AST::Stmt::Assign.new(var: a, expr: expr, node: node)
+            stmts << assign
+
+            AST::Expr::Var.new(var: a, node: nil)
+          end
         end
       end
 

@@ -117,6 +117,16 @@ module Contror
           end
         end
 
+        class IteratorBlock
+          attr_reader :params
+          attr_reader :body
+
+          def initialize(params:, body:)
+            @params = params
+            @body = body
+          end
+        end
+
         class Call < Base
           attr_reader :receiver
           attr_reader :name
@@ -168,6 +178,15 @@ module Contror
 
           def initialize(elements:, node:)
             @elements = elements
+            super(node: node)
+          end
+        end
+
+        class BlockPass < Base
+          attr_reader :var
+
+          def initialize(var:, node:)
+            @var = var
             super(node: node)
           end
         end
