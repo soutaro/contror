@@ -502,4 +502,22 @@ class ANFTranslatorTest < Minitest::Test
       assert_nil ast.stmts[4]
     end
   end
+
+  def test_translate_def
+    translate("def f(); 3; end") do |ast|
+      p ast
+    end
+  end
+
+  def test_translate_def_without_body
+
+  end
+
+  def test_translate_def_with_params
+
+  end
+
+  def test_translate_def_with_defaulted_params
+
+  end
 end
