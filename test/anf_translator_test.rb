@@ -505,19 +505,112 @@ class ANFTranslatorTest < Minitest::Test
 
   def test_translate_def
     translate("def f(); 3; end") do |ast|
-      p ast
+      assert_instance_of AST::Stmt::Def, ast
+
+      assert_nil ast.var
+      assert_nil ast.object
+      assert_equal :f, ast.name
+      assert_equal [], ast.params
+
+      body = ast.body
+      assert_instance_of AST::Stmt::Expr, body
+      assert_instance_of AST::Expr::Value, body.expr
+      assert_equal 3, body.expr.node.children.first
     end
   end
 
   def test_translate_def_without_body
+    translate("def f(); end") do |ast|
+      assert_instance_of AST::Stmt::Def, ast
 
+      assert_nil ast.var
+      assert_nil ast.object
+      assert_equal :f, ast.name
+      assert_equal [], ast.params
+
+      assert_nil ast.body
+    end
   end
 
   def test_translate_def_with_params
+    translate("def f(a, b=1, *c, d:, e: (x = 1; x+1), **f, &g); end") do |ast|
+      assert_instance_of AST::Stmt::Def, ast
 
+      assert_def_param ast.params[0], type: :arg, name: :a, default: nil
+
+      assert_def_param ast.params[1], type: :optarg, name: :b, default: AST::Stmt::Expr do |stmt|
+        assert_instance_of AST::Expr::Value, stmt.expr
+        assert_equal 1, stmt.expr.node.children.first
+      end
+
+      assert_def_param ast.params[2], type: :restarg, name: :c, default: nil
+
+      assert_def_param ast.params[3], type: :kwarg, name: :d, default: nil
+
+      assert_def_param ast.params[4], type: :kwoptarg, name: :e, default: AST::Stmt::Block
+
+      assert_def_param ast.params[5], type: :kwrestarg, name: :f, default: nil
+
+      assert_def_param ast.params[6], type: :blockarg, name: :g, default: nil
+    end
   end
 
-  def test_translate_def_with_defaulted_params
+  def test_translate_def_expr
+    translate("private def hoge; end") do |ast|
+      assert_block_stmt ast do |stmts|
+        def_stmt = stmts[0]
+        assert_instance_of AST::Stmt::Def, def_stmt
+        assert_equal :hoge, def_stmt.name
+        assert_instance_of AST::Variable::Pseud, def_stmt.var
 
+        assert_assign_stmt stmts[1], var: AST::Variable::Pseud do |expr|
+          assert_instance_of AST::Expr::Var, expr
+          assert_equal def_stmt.var, expr.var
+        end
+
+        call_stmt = stmts[2]
+        assert_instance_of AST::Stmt::Expr, call_stmt
+
+        call_expr = call_stmt.expr
+        assert_instance_of AST::Expr::Call, call_expr
+        assert_equal :private, call_expr.name
+        assert_equal stmts[1].var, call_expr.args.first.var
+      end
+    end
+  end
+
+  def assert_block_stmt(stmt)
+    assert_instance_of AST::Stmt::Block, stmt
+    yield stmt.stmts
+  end
+
+  def assert_assign_stmt(stmt, var: nil)
+    assert_instance_of AST::Stmt::Assign, stmt
+    if var
+      case var
+      when Class
+        assert_instance_of var, stmt.var
+      when nil
+        # skip
+      else
+        assert_equal var, stmt.var
+      end
+    end
+
+    yield stmt.expr if block_given?
+  end
+
+  def assert_def_param(param, type:, name:, default: false)
+    assert_equal type, param[0]
+    assert_equal name, param[1]
+
+    case default
+    when Class
+      assert_instance_of default, param[2]
+    when nil
+      assert_nil param[2]
+    end
+
+    yield param[2] if block_given?
   end
 end

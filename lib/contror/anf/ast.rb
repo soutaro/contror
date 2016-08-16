@@ -91,12 +91,14 @@ module Contror
         end
 
         class Def < Base
+          attr_reader :var
           attr_reader :object
           attr_reader :name
           attr_reader :params
           attr_reader :body
 
-          def initialize(object:, name:, params:, body:, node:)
+          def initialize(var:, object:, name:, params:, body:, node:)
+            @var = var
             @object = object
             @name = name
             @params = params

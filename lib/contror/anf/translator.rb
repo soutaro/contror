@@ -51,13 +51,16 @@ module Contror
           when :while
             translate_while(node, break_var: var, stmts: stmts)
 
-          else
-            expr = translate_expr(node, stmts: stmts)
+          when :def
+            translate_def(node, var: var, stmts: stmts)
 
-            if var
-              stmts << AST::Stmt::Assign.new(var: var, expr: expr, node: node)
-            else
-              stmts << AST::Stmt::Expr.new(expr: expr, node: node)
+          else
+            if (expr = translate_expr(node, stmts: stmts))
+              if var
+                stmts << AST::Stmt::Assign.new(var: var, expr: expr, node: node)
+              else
+                stmts << AST::Stmt::Expr.new(expr: expr, node: node)
+              end
             end
           end
         end
@@ -86,6 +89,24 @@ module Contror
                                          expr: AST::Expr::Var.new(var: v, node: nil),
                                          node: node)
         end
+      end
+
+      def translate_def(node, var:, stmts:)
+        name = node.children[0]
+        params = node.children[1].children.map do |arg_node|
+          arg_name = arg_node.children[0]
+
+          case arg_node.type
+          when :optarg, :kwoptarg
+            stmt = translate(node: arg_node.children[1])
+            [arg_node.type, arg_name, stmt]
+          else
+            [arg_node.type, arg_name]
+          end
+        end
+        body = node.children[2] && translate(node: node.children[2])
+
+        stmts << AST::Stmt::Def.new(var: var, object: nil, name: name, params: params, body: body, node: node)
       end
 
       def translate_constant_assign(node, var:, stmts:)
@@ -168,8 +189,14 @@ module Contror
 
             AST::Expr::Array.new(elements: array, node: array)
 
+          when :def
+            a = fresh_var
+            translate_def node, var: a, stmts: stmts
+            AST::Expr::Var.new(var: a, node: nil)
+
           else
             p unknown_node: node
+            nil
           end
         end
       end
