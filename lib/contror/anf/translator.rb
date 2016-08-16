@@ -1,93 +1,381 @@
 module Contror
   module ANF
+    module ObjectTry
+      refine ::Object do
+        def try
+          if self != nil
+            yield self
+          end
+        end
+      end
+    end
+
+    using ObjectTry
+
     class Translator
-      attr_reader :count
+      attr_reader :blocks
 
       def initialize()
         @fresh_var_id = 0
+        @blocks = []
       end
 
       # Translate given node to Stmt
       def translate(node:)
-        maybe_block(translate0(node: node, stmts: []), node: node)
-      end
-
-      def maybe_block(stmts, node:)
-        if stmts.count > 1
-          AST::Stmt::Block.new(stmts: stmts, node: node)
-        else
-          stmts.first
+        with_new_block node do
+          translate0(node)
         end
       end
 
-      def translate0(node:, var: nil, stmts: [])
-        # p node
+      def with_new_block(node)
+        @blocks << []
 
-        if node.type == :begin
-          node.children[0, node.children.size - 1].each do |child|
-            translate0(node: child, var: nil, stmts: stmts)
-          end
+        yield
 
-          translate0(node: node.children.last, var: var, stmts: stmts)
+        block = @blocks.pop
+
+        case block.size
+        when 0
+          nil
+        when 1
+          block.first
         else
+          AST::Stmt::Block.new(dest: fresh_var, stmts: block, node: node)
+        end
+      end
+
+      def current_block
+        @blocks.last
+      end
+
+      def push_stmt(stmt)
+        current_block.push stmt
+        stmt
+      end
+
+      def normalize_node(node)
+        if value_node?(node)
           case node.type
-          when :lvasgn, :ivasgn, :gvasgn, :cvasgn
-            translate_assign(node, var: var, stmts: stmts)
-
-          when :casgn
-            translate_constant_assign(node, var: var, stmts: stmts)
-
-          when :if
-            condition = normalized_expr(node.children[0], stmts: stmts)
-            if (then_node = node.children[1])
-              then_claus = maybe_block(translate0(node: then_node, var: var, stmts: []), node: then_node)
-            end
-            if (else_node = node.children[2])
-              else_clause = maybe_block(translate0(node: else_node, var: var, stmts: []), node: else_node)
-            end
-
-            stmts << AST::Stmt::If.new(condition: condition, then_clause: then_claus, else_clause: else_clause, node: node)
-
-          when :while
-            translate_while(node, break_var: var, stmts: stmts)
-
-          when :def, :defs
-            translate_def(node, var: var, stmts: stmts)
-
+          when :ivar, :lvar, :gvar, :cvar
+            translate_var(node)
           else
-            if (expr = translate_expr(node, stmts: stmts))
-              if var
-                stmts << AST::Stmt::Assign.new(var: var, expr: expr, node: node)
-              else
-                stmts << AST::Stmt::Expr.new(expr: expr, node: node)
-              end
+            node
+          end
+        else
+          translate0(node).dest
+        end
+      end
+
+      def translate0(node)
+        case node.type
+        when :begin
+          block = with_new_block node do
+            node.children.each do |child|
+              translate0(child)
             end
           end
-        end
 
-        stmts
+          push_stmt block
+
+        when :if
+          condition = normalize_node(node.children[0])
+          then_clause = node.children[1].try {|child| with_new_block(child) { translate0(child) } }
+          else_clause = node.children[2].try {|child| with_new_block(child) { translate0(child) } }
+
+          push_stmt AST::Stmt::If.new(dest: fresh_var,
+                                      condition: condition,
+                                      then_clause: then_clause,
+                                      else_clause: else_clause,
+                                      node: node)
+
+        when :send
+          translate_call node, block: nil
+
+        when :csend
+          translate_call node, block: nil
+
+        when :block
+          params = translate_params node.children[1]
+          body = node.children[2].try {|block_node| translate(node: block_node) }
+
+          case node.children[0].type
+          when :send, :csend
+            translate_call node.children[0], block: AST::Stmt::Call::Block.new(params: params, body: body)
+          when :lambda
+            push_stmt AST::Stmt::Lambda.new(dest: fresh_var,
+                                            params: params,
+                                            body: body,
+                                            node: node)
+          else
+            raise "unknown block child: #{node.children[0].type}"
+          end
+
+        when :dstr
+          components = []
+          node.children.each do |child|
+            components << normalize_node(child)
+          end
+
+          push_stmt AST::Stmt::Dstr.new(dest: fresh_var, components: components, node: node)
+
+        when :while
+          loop = with_new_block node do
+            cond = normalize_node(node.children[0])
+
+            break_stmt = AST::Stmt::Jump.new(dest: fresh_var, type: :break, args: [], node: nil)
+
+            push_stmt AST::Stmt::If.new(dest: fresh_var,
+                                        condition: cond,
+                                        then_clause: nil,
+                                        else_clause: break_stmt,
+                                        node: node.children[0])
+
+            node.children[1].try {|body| translate0(body) }
+          end
+
+          push_stmt AST::Stmt::Loop.new(dest: fresh_var, body: loop, node: node)
+
+        when :until
+          loop = with_new_block node do
+            cond = normalize_node(node.children[0])
+
+            break_stmt = AST::Stmt::Jump.new(dest: fresh_var, type: :break, args: [], node: nil)
+
+            push_stmt AST::Stmt::If.new(dest: fresh_var,
+                                        condition: cond,
+                                        then_clause: break_stmt,
+                                        else_clause: nil,
+                                        node: node.children[0])
+
+            node.children[1].try {|body| translate0(body) }
+          end
+
+          push_stmt AST::Stmt::Loop.new(dest: fresh_var, body: loop, node: node)
+
+        when :array
+          elements = []
+
+          node.children.each do |child|
+            elements << normalize_node(child)
+          end
+
+          push_stmt AST::Stmt::Array.new(dest: fresh_var, elements: elements, node: node)
+
+        when :hash
+          pairs = []
+
+          splat = nil
+
+          node.children.each do |pair|
+            case pair.type
+            when :pair
+              key = normalize_node(pair.children[0])
+              value = normalize_node(pair.children[1])
+              pairs << AST::Stmt::Hash::Pair.new(key: key, value: value)
+            when :kwsplat
+              splat = normalize_node(pair.children[0])
+            else
+              raise "unknown hash element: #{pair.type}"
+            end
+          end
+
+          push_stmt AST::Stmt::Hash.new(dest: fresh_var, pairs: pairs, splat: splat, node: node)
+
+        when :casgn
+          prefix = node.children[0].try {|prefix| normalize_node(prefix) }
+          value = normalize_node(node.children[2])
+
+          push_stmt AST::Stmt::ConstantAssign.new(dest: fresh_var,
+                                                  prefix: prefix,
+                                                  name: node.children[1],
+                                                  value: value,
+                                                  node: node)
+        when :const
+          prefix = node.children[0].try {|prefix| normalize_node(prefix) }
+
+          push_stmt AST::Stmt::Constant.new(dest: fresh_var,
+                                            prefix: prefix,
+                                            name: node.children[1],
+                                            node: node)
+
+        when :ivar, :lvar, :gvar, :cvar
+          var = translate_var(node)
+          push_stmt AST::Stmt::Value.new(dest: fresh_var, value: var, node: node)
+
+        when :lvasgn, :ivasgn, :gvasgn, :cvasgn
+          lhs_var = translate_var(node)
+          rhs = normalize_node(node.children[1])
+          push_stmt AST::Stmt::Assign.new(dest: fresh_var, lhs: lhs_var, rhs: rhs, node: node)
+
+        when :retry, :next
+          push_stmt AST::Stmt::Jump.new(dest: fresh_var, type: node.type, args: nil, node: node)
+
+        when :break, :return
+          args = []
+          node.children.each do |arg|
+            args << translate_arg(arg)
+          end
+          push_stmt AST::Stmt::Jump.new(dest: fresh_var, type: node.type, args: args, node: node)
+
+        when :yield
+          args = []
+          node.children.each do |arg|
+            args << translate_arg(arg)
+          end
+          push_stmt AST::Stmt::Yield.new(dest: fresh_var, args: args, node: node)
+
+        when :class
+          name = normalize_node(node.children[0])
+          super_class = node.children[1].try {|super_node| normalize_node(super_node) }
+          body = node.children[2].try {|body_node| translate(node: body_node) }
+
+          push_stmt AST::Stmt::Class.new(dest: fresh_var, name: name, super_class: super_class, body: body, node: node)
+
+        when :module
+          name = normalize_node(node.children[0])
+          body = node.children[1].try {|body_node| translate(node: body_node) }
+
+          push_stmt AST::Stmt::Module.new(dest: fresh_var, name: name, body: body, node: node)
+
+        when :sclass
+          object = normalize_node(node.children[0])
+          body = node.children[1].try {|body_node| translate(node: body_node) }
+
+          push_stmt AST::Stmt::SingletonClass.new(dest: fresh_var, object: object, body: body, node: node)
+
+        when :def, :defs
+          case node.type
+          when :def
+            object_node = nil
+            name = node.children[0]
+            args_node = node.children[1]
+            body_node = node.children[2]
+          when :defs
+            object_node = node.children[0]
+            name = node.children[1]
+            args_node = node.children[2]
+            body_node = node.children[3]
+          end
+
+          object = object_node.try {|n| normalize_node(n) }
+          params = translate_params(args_node)
+          body = body_node.try {|n| translate(node: n) }
+
+          push_stmt AST::Stmt::Def.new(dest: fresh_var, object: object, name: name, params: params, body: body, node: node)
+
+        when :and
+          lhs = normalize_node(node.children[0])
+          rhs = translate(node: node.children[1])
+
+          push_stmt AST::Stmt::If.new(dest: fresh_var, condition: lhs, then_clause: rhs, else_clause: nil, node: node)
+
+        when :or
+          lhs = normalize_node(node.children[0])
+          rhs = translate(node: node.children[1])
+
+          push_stmt AST::Stmt::If.new(dest: fresh_var, condition: lhs, then_clause: nil, else_clause: rhs, node: node)
+
+        when :masgn
+          vars = []
+          node.children[0].children.each do |asgn|
+            if asgn.type == :splat
+              vars << AST::Variable::Splat.new(var: translate_var(asgn.children.first))
+            else
+              vars << translate_var(asgn)
+            end
+          end
+
+          rhs = normalize_node(node.children[1])
+
+          push_stmt AST::Stmt::MAssign.new(dest: fresh_var, vars: vars, rhs: rhs, node: node)
+
+        when :kwbegin
+          translate0(node.children.first)
+
+        when :rescue
+          body = node.children[0].try {|body_node| translate(node: body_node) }
+
+          rescues = []
+          node.children.drop(1).each do |res|
+            if res
+              class_stmt = res.children[0].try {|a| translate(node: a) }
+              var = res.children[1].try {|x| translate_var(x) }
+              rescue_body = res.children[2].try {|body_node| translate(node: body_node) }
+
+              rescues << AST::Stmt::Rescue::Clause.new(class_stmt: class_stmt, var: var, body: rescue_body)
+            end
+          end
+
+          push_stmt AST::Stmt::Rescue.new(dest: fresh_var, body: body, rescues: rescues, node: node)
+
+        when :ensure
+          ensured = node.children[0].try {|body_node| translate(node: body_node) }
+          ensuring = node.children[1].try {|body_node| translate(node: body_node)}
+
+          push_stmt AST::Stmt::Ensure.new(dest: fresh_var, ensured: ensured, ensuring: ensuring, node: node)
+
+        else
+          if value_node?(node)
+            push_stmt AST::Stmt::Value.new(dest: fresh_var, value: node, node: node)
+          else
+            pp unknown_node: node
+            raise "unknown_node #{node.type}"
+          end
+        end
       end
 
-      def translate_while(node, break_var:, stmts:)
-        condition = maybe_block(translate0(node: node.children[0], var: nil, stmts: []), node: node.children[0])
-
-        if (body_node = node.children[1])
-          body = maybe_block(translate0(node: body_node, var: nil, stmts: []), node: body_node)
+      def translate_arg(arg)
+        case arg.type
+        when :block_pass
+          var = normalize_node(arg.children[0])
+          AST::Variable::BlockPass.new(var: var)
+        when :splat
+          var = normalize_node(arg.children[0])
+          AST::Variable::Splat.new(var: var)
+        else
+          normalize_node(arg)
         end
-
-        stmts << AST::Stmt::While.new(condition: condition, body: body, break_var: break_var, node: node)
       end
 
-      def translate_assign(node, var:, stmts:)
-        v = translate_var(node)
-        stmts << AST::Stmt::Assign.new(var: v,
-                                       expr: translate_expr(node.children[1], stmts: stmts),
-                                       node: node)
+      def translate_call(node, block:)
+        receiver = node.children[0].try {|recv| normalize_node(recv) }
+        name = node.children[1]
 
-        if var
-          stmts << AST::Stmt::Assign.new(var: var,
-                                         expr: AST::Expr::Var.new(var: v, node: nil),
-                                         node: node)
+        case node.type
+        when :send
+          args = []
+          node.children.drop(2).each do |arg|
+            args << translate_arg(arg)
+          end
+
+          push_stmt AST::Stmt::Call.new(dest: fresh_var,
+                                        receiver: receiver,
+                                        name: name,
+                                        args: args,
+                                        block: block,
+                                        node: node)
+        when :csend
+          then_block = with_new_block node do
+            args = []
+            node.children.drop(2).each do |arg|
+              args << translate_arg(arg)
+            end
+
+            push_stmt AST::Stmt::Call.new(dest: fresh_var,
+                                          receiver: receiver,
+                                          name: name,
+                                          args: args,
+                                          block: block,
+                                          node: node)
+          end
+
+
+
+          push_stmt AST::Stmt::If.new(dest: fresh_var,
+                                      condition: receiver,
+                                      then_clause: then_block,
+                                      else_clause: nil,
+                                      node: node)
         end
       end
 
@@ -105,173 +393,17 @@ module Contror
         end
       end
 
-      def translate_def(node, var:, stmts:)
-        case node.type
-        when :def
-          object_node = nil
-          name = node.children[0]
-          args_node = node.children[1]
-          body_node = node.children[2]
-        when :defs
-          object_node = node.children[0]
-          name = node.children[1]
-          args_node = node.children[2]
-          body_node = node.children[3]
-        else
-          raise "unknown def node: #{node.type}"
-        end
-
-        object = object_node && normalized_expr(object_node, stmts: stmts)
-        params = translate_params(args_node)
-        body = body_node && translate(node: body_node)
-
-        stmts << AST::Stmt::Def.new(var: var, object: object, name: name, params: params, body: body, node: node)
-      end
-
-      def translate_constant_assign(node, var:, stmts:)
-        if (prefix_node = node.children[0])
-          prefix = normalized_expr(prefix_node, stmts: stmts)
-        end
-
-        a = normalized_expr(node.children[2], stmts: stmts)
-
-        stmts << AST::Stmt::ConstantAssign.new(prefix: prefix,
-                                               name: node.children[1],
-                                               expr: a,
-                                               node: node)
-
-        if var
-          stmts << AST::Stmt::Assign.new(var: var, expr: a, node: nil)
-        end
-      end
-
-      def translate_expr(node, stmts:)
-        if value_node?(node)
-          case node.type
-          when :lvar, :cvar, :ivar, :gvar
-            AST::Expr::Var.new(var: translate_var(node), node: node)
-          else
-            AST::Expr::Value.new(node: node)
-          end
-        else
-          case node.type
-          when :send
-            translate_call(node, block: nil, stmts: stmts)
-
-          when :if
-            a = fresh_var
-            stmts << maybe_block(translate0(node: node, var: a, stmts: []), node: node)
-            AST::Expr::Var.new(var: a, node: nil)
-
-          when :while
-            a = fresh_var
-            translate_while(node, break_var: a, stmts: stmts)
-            AST::Expr::Var.new(var: a, node: nil)
-
-          when :const
-            if (prefix_node = node.children[0])
-              prefix = normalized_expr(prefix_node, stmts: stmts)
-            end
-
-            AST::Expr::Constant.new(prefix: prefix, name: node.children[1], node: node)
-
-          when :lvasgn, :ivasgn, :cvasgn, :gvasgn
-            a = fresh_var
-            translate_assign(node, var: a, stmts: stmts)
-            AST::Expr::Var.new(var: a, node: nil)
-
-          when :casgn
-            a = fresh_var
-            translate_constant_assign(node, var: a, stmts: stmts)
-            AST::Expr::Var.new(var: a, node: nil)
-
-          when :array
-            array = []
-
-            node.children.each do |child|
-              if value_node?(child)
-                array << translate_expr(child, stmts: stmts)
-              else
-                array << normalized_expr(child, stmts: stmts)
-              end
-            end
-
-            AST::Expr::Array.new(elements: array, node: array)
-
-          when :block
-            block_params = translate_params(node.children[1])
-            block_body = node.children[2] && translate(node: node.children[2])
-
-            translate_call(node.children[0],
-                           block: AST::Expr::IteratorBlock.new(params: block_params, body: block_body),
-                           stmts: stmts,
-                           node: node)
-
-          when :block_pass
-            a = normalized_expr(node.children[0], stmts: stmts)
-            raise "block-pass should have variable: #{node}, #{a}" unless a.is_a?(AST::Expr::Var)
-
-            AST::Expr::BlockPass.new(var: a.var, node: node)
-
-          when :def, :defs
-            a = fresh_var
-            translate_def node, var: a, stmts: stmts
-            AST::Expr::Var.new(var: a, node: nil)
-
-          else
-            p unknown_node: node
-            nil
-          end
-        end
-      end
-
-      def translate_call(call_node, block:, stmts:, node: call_node)
-        receiver = if (receiver_node = call_node.children[0])
-                     normalized_expr(receiver_node, stmts: stmts)
-                   end
-
-        args = []
-
-        call_node.children.drop(2).each do |a|
-          args << normalized_expr(a, stmts: stmts)
-        end
-
-        AST::Expr::Call.new(receiver: receiver,
-                            name: call_node.children[1],
-                            args: args,
-                            block: block,
-                            node: node)
-      end
-
-      def normalized_expr(node, stmts:)
-        if value_node?(node)
-          translate_expr(node, stmts: stmts)
-        else
-          expr = translate_expr(node, stmts: stmts)
-
-          case expr
-          when AST::Expr::BlockPass
-            expr
-          else
-            a = fresh_var
-
-            assign = AST::Stmt::Assign.new(var: a, expr: expr, node: node)
-            stmts << assign
-
-            AST::Expr::Var.new(var: a, node: nil)
-          end
-        end
-      end
-
       def value_node?(node)
         case node.type
-        when :lvar, :ivar, :gvar, :cvar
+        when :ivar, :lvar, :gvar, :cvar
           true
         when :true, :false
           true
         when :float, :str, :sym, :int, :complex, :rational
           true
         when :self, :nil
+          true
+        when :cbase
           true
         else
           false

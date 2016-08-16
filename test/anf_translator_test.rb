@@ -11,309 +11,361 @@ class ANFTranslatorTest < Minitest::Test
 
   AST = Contror::ANF::AST
 
+  # x is instance of y
+  # x is equal to y
+  def assert_instance_or_value(expected, actual)
+    if expected.is_a?(Class)
+      assert_instance_of expected, actual
+    else
+      assert_equal expected, actual
+    end
+  end
+
+  def assert_value_stmt(expected, actual)
+    assert_instance_of AST::Stmt::Value, actual
+    assert_value expected, actual.value
+  end
+
+  def assert_value(expected, actual)
+    if expected == nil
+      assert_nil actual
+      return
+    end
+
+    if expected.is_a?(AST::Variable::Base)
+      assert_instance_or_value expected, actual
+    else
+      assert_instance_of Parser::AST::Node, actual
+
+      case expected
+      when Hash
+        assert_equal expected[:type], actual.type if expected[:type]
+        assert_equal expected[:value], actual.children.first if expected[:value]
+      when Symbol
+        if actual.type == expected
+          assert_equal expected, actual.type
+        else
+          assert_equal :sym, actual.type
+          assert_equal expected, actual.children.first
+        end
+      else
+        assert_equal expected, actual.children.first
+      end
+    end
+  end
+
+  def assert_assign_stmt(stmt, lhs: nil, rhs: nil)
+    assert_instance_of AST::Stmt::Assign, stmt
+
+    assert_instance_or_value lhs, stmt.lhs if lhs
+    assert_value rhs, stmt.rhs if rhs
+
+    yield stmt.lhs, stmt.rhs if block_given?
+  end
+
+  def assert_call_stmt(stmt, receiver:, name:, args:)
+    assert_instance_of AST::Stmt::Call, stmt
+
+    if receiver
+      assert_value receiver, stmt.receiver
+    else
+      assert_nil stmt.receiver
+    end
+    assert_equal stmt.name, name
+
+    if args
+      assert_equal args.size, stmt.args.size
+      args.each.with_index do |arg, index|
+        assert_value arg, stmt.args[index]
+      end
+    end
+
+    yield stmt.block if block_given?
+  end
+
   def test_translate_lasign
     translate("x = 3") do |ast|
-      assert_instance_of AST::Stmt::Assign, ast
+      assert_assign_stmt ast, lhs: AST::Variable::Local.new(name: :x), rhs: 3
+    end
+  end
 
-      assert_instance_of AST::Variable::Local, ast.var
-      assert_equal :x, ast.var.name
-
-      assert_instance_of AST::Expr::Value, ast.expr
-      assert_equal :int, ast.expr.node.type
+  def test_translate_lasign_lasign
+    translate("x = y = 3") do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_assign_stmt stmts[0], lhs: AST::Variable::Local.new(name: :y), rhs: 3
+        assert_assign_stmt stmts[1], lhs: AST::Variable::Local.new(name: :x), rhs: stmts[0].dest
+      end
     end
   end
 
   def test_translate_call
-    translate("1 + 2") do |ast|
-      assert_instance_of AST::Stmt::Expr, ast
-
-      expr = ast.expr
-
-      assert_instance_of AST::Expr::Call, expr
-      assert_instance_of AST::Expr::Value, expr.receiver
-      assert_equal :+, expr.name
-      assert_instance_of AST::Expr::Value, expr.args[0]
+    translate("1+2") do |ast|
+      assert_call_stmt ast, receiver: 1, name: :+, args: [2]
     end
-  end
 
-  def test_translate_call_normalizing_receiver
-    translate("1+2+3") do |ast|
-      assert_instance_of AST::Stmt::Block, ast
-
-      # _1 = 1+2
-      assign = ast.stmts[0]
-      assert_instance_of AST::Stmt::Assign, assign
-      assert_instance_of AST::Variable::Pseud, assign.var
-      assert_instance_of AST::Expr::Call, assign.expr
-
-      # _1+3
-      call = ast.stmts[1]
-      assert_instance_of AST::Stmt::Expr, call
-      assert_instance_of AST::Expr::Call, call.expr
-      assert_instance_of AST::Expr::Var, call.expr.receiver
-      assert_instance_of AST::Variable::Pseud, call.expr.receiver.var
-      assert_equal assign.var, call.expr.receiver.var
+    translate("f().g(h())") do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: nil, name: :f, args: []
+        assert_call_stmt stmts[1], receiver: nil, name: :h, args: []
+        assert_call_stmt stmts[2], receiver: stmts[0].dest, name: :g, args: [stmts[1].dest]
+      end
     end
-  end
 
-  def test_translate_call_normalizing_args
-    translate("f(1+2)") do |ast|
-      assert_instance_of AST::Stmt::Block, ast
+    translate("5.each(&block)") do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: nil, name: :block, args: []
+        assert_call_stmt stmts[1], receiver: 5, name: :each, args: [AST::Variable::BlockPass.new(var: stmts[0].dest)]
+      end
+    end
 
-      # _1 = 1+2
-      assign = ast.stmts[0]
-      assert_instance_of AST::Stmt::Assign, assign
-      assert_instance_of AST::Variable::Pseud, assign.var
-      assert_instance_of AST::Expr::Call, assign.expr
+    translate("f(*[])") do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_array_stmt stmts[0], elements: []
+        assert_call_stmt stmts[1], receiver: nil, name: :f, args: [AST::Variable::Splat.new(var: stmts[0].dest)]
+      end
+    end
 
-      # f(_1)
-      call = ast.stmts[1]
-      assert_instance_of AST::Stmt::Expr, call
-      assert_instance_of AST::Expr::Call, call.expr
-
-      arg = call.expr.args[0]
-      assert_instance_of AST::Expr::Var, arg
-      assert_instance_of AST::Variable::Pseud, arg.var
-
-      assert_equal assign.var, arg.var
+    translate("f(x: 1+2)") do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: 1, name: :+, args: [2]
+        assert_hash_stmt stmts[1], pairs: [[:x, stmts[0].dest]]
+        assert_call_stmt stmts[2], receiver: nil, name: :f, args: [stmts[1].dest]
+      end
     end
   end
 
   def test_translate_call_with_block
     translate("3.each do |x| end") do |ast|
-      assert_expr_stmt ast do |expr|
-        assert_call_expr expr, name: :each, receiver: AST::Expr::Value do |args, block|
-          assert_empty args
-
-          refute_nil block
-          assert_instance_of AST::Expr::IteratorBlock, block
-          assert_def_param block.params[0], type: :arg, name: :x
-          assert_nil block.body
-        end
+      assert_call_stmt ast, receiver: 3, name: :each, args: [] do |block|
+        assert_def_param block.params[0], type: :arg, name: :x, default: nil
+        assert_nil block.body
       end
     end
   end
 
-  def test_translate_call_with_block_pass
-    translate("5.each(&block)") do |ast, node|
-      assert_block_stmt ast do |stmts|
-        # _1 = block()
-        assert_assign_stmt stmts[0], var: AST::Variable::Pseud
+  def test_translate_csend
+    translate("1&.f") do |ast|
+      assert_if_stmt ast, condition: 1 do |t, f|
+        assert_call_stmt t, receiver: 1, name: :f, args: []
+        assert_nil f
+      end
+    end
+  end
 
-        # 5.each(&_1)
-        assert_expr_stmt stmts[1] do |expr|
-          assert_call_expr expr, name: :each, receiver: AST::Expr::Value do |args, block|
-            assert_instance_of AST::Expr::BlockPass, args[0]
-            assert_equal stmts[0].var, args[0].var
-            assert_nil block
+  def assert_if_stmt(stmt, condition:)
+    assert_instance_of AST::Stmt::If, stmt
+    assert_value condition, stmt.condition
+    yield stmt.then_clause, stmt.else_clause if block_given?
+  end
+
+  def test_translate_if
+    translate("if x() then y() else z() end") do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: nil, name: :x, args: []
+        assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
+          assert_call_stmt t, receiver: nil, name: :y, args: []
+          assert_call_stmt f, receiver: nil, name: :z, args: []
+        end
+      end
+    end
+
+    translate("if x() then y() end") do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: nil, name: :x, args: []
+        assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
+          assert_call_stmt t, receiver: nil, name: :y, args: []
+          assert_nil f
+        end
+      end
+    end
+
+    translate("unless x() then y() end") do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: nil, name: :x, args: []
+        assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
+          assert_nil t
+          assert_call_stmt f, receiver: nil, name: :y, args: []
+        end
+      end
+    end
+
+    translate("x = 1 ? 2 : 3") do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_if_stmt stmts[0], condition: 1 do |t, f|
+          assert_value_stmt 2, t
+          assert_value_stmt 3, f
+        end
+        assert_assign_stmt stmts[1], lhs: AST::Variable::Local.new(name: :x), rhs: stmts[0].dest
+      end
+    end
+  end
+
+  def assert_loop_stmt(ast)
+    assert_instance_of AST::Stmt::Loop, ast
+    yield ast.body if block_given?
+  end
+
+  def assert_jump_stmt(stmt, type:, args:)
+    assert_instance_of AST::Stmt::Jump, stmt
+    assert_equal type, stmt.type
+
+    if args
+      assert_equal args.size, stmt.args.size
+      args.each.with_index do |a, index|
+        assert_value args[index], a
+      end
+    else
+      assert_equal args, stmt.args
+    end
+  end
+
+  def test_translate_loop
+    translate <<-EOS do |ast|
+      while f()
+        g()
+      end
+    EOS
+      assert_loop_stmt ast do |body|
+        assert_block_stmt body do |stmts|
+          assert_call_stmt stmts[0], receiver: nil, name: :f, args: []
+          assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
+            assert_nil t
+            assert_jump_stmt f, type: :break, args: []
           end
         end
       end
     end
+
+    translate <<-EOS do |ast|
+      until f()
+        g()
+      end
+    EOS
+      assert_loop_stmt ast do |body|
+        assert_block_stmt body do |stmts|
+          assert_call_stmt stmts[0], receiver: nil, name: :f, args: []
+          assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
+            assert_jump_stmt t, type: :break, args: []
+            assert_nil f
+          end
+        end
+      end
+    end
+
+    translate <<-EOS do |ast|
+      x = while f()
+      end
+    EOS
+      assert_block_stmt ast do |stmts|
+        assert_loop_stmt stmts[0] do |body|
+          assert_block_stmt body
+        end
+
+        assert_assign_stmt stmts[1], lhs: AST::Variable::Local.new(name: :x), rhs: stmts[0].dest
+      end
+    end
+  end
+
+  def assert_array_stmt(stmt, elements:)
+    assert_instance_of AST::Stmt::Array, stmt
+
+    if elements
+      assert_equal elements.size, stmt.elements.size
+      stmt.elements.each.with_index do |a, i|
+        assert_value elements[i], a
+      end
+    end
+
+    yield stmt.elements if block_given?
   end
 
   def test_translate_literals
     translate("f(1, 1.0, 'a', :b, true, false, self, nil, 1i, 1r)") do |ast|
-      assert_instance_of AST::Stmt::Expr, ast
-      assert_instance_of AST::Expr::Call, ast.expr
+      assert_call_stmt ast, receiver: nil, name: :f, args: [1, 1.0, 'a', :b, :true, :false, :self, :nil, 1i, 1r]
     end
   end
 
   def test_translate_array
-    translate("[1, true, false, nil]") do |ast|
-      assert_instance_of AST::Stmt::Expr, ast
-      assert_instance_of AST::Expr::Array, ast.expr
+    translate("[]") do |ast|
+      assert_array_stmt ast, elements: []
+    end
 
-      ast.expr.elements.each do |elem|
-        assert_instance_of AST::Expr::Value, elem
-      end
+    translate("[1, true, false, nil]") do |ast|
+      assert_array_stmt ast, elements: [1, :true, :false, :nil]
     end
 
     translate("[@a]") do |ast|
-      assert_instance_of AST::Stmt::Expr, ast
-      assert_instance_of AST::Expr::Array, ast.expr
-
-      iv = ast.expr.elements.first
-      assert_instance_of AST::Expr::Var, iv
-      assert_equal :"@a", iv.var.name
+      assert_array_stmt ast, elements: [AST::Variable::Instance.new(name: :"@a")]
     end
 
     # array elements should be value
     translate("[f()]") do |ast|
-      assert_instance_of AST::Stmt::Block, ast
-
-      # _1 = f()
-      assign = ast.stmts[0]
-      assert_instance_of AST::Stmt::Assign, assign
-      assert_instance_of AST::Variable::Pseud, assign.var
-      assert_instance_of AST::Expr::Call, assign.expr
-      assert_equal :f, assign.expr.name
-
-      # [_1]
-      array = ast.stmts[1]
-      assert_instance_of AST::Stmt::Expr, array
-      assert_instance_of AST::Expr::Array, array.expr
-      assert_instance_of AST::Expr::Var, array.expr.elements[0]
-      assert_equal assign.var, array.expr.elements[0].var
-    end
-  end
-
-  def test_translate_if
-    src = <<-EOS
-      if a
-        b
-      else
-        c
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: nil, name: :f, args: []
+        assert_array_stmt stmts[1], elements: [stmts[0].dest]
       end
-    EOS
-    translate(src) do |ast|
-      assert_instance_of AST::Stmt::Block, ast
-
-      assert_instance_of AST::Stmt::Assign, ast.stmts[0]
-
-      if_stmt = ast.stmts[1]
-      assert_instance_of AST::Stmt::If, if_stmt
-      assert_instance_of AST::Expr::Var, if_stmt.condition
-      assert_instance_of AST::Stmt::Expr, if_stmt.then_clause
-      assert_instance_of AST::Stmt::Expr, if_stmt.else_clause
     end
   end
 
-  def test_translate_if_expr
-    translate("f(1 ? y : z)") do |ast|
-      assert_instance_of AST::Stmt::Block, ast
+  def assert_hash_stmt(stmt, pairs: nil, splat: nil)
+    assert_instance_of AST::Stmt::Hash, stmt
 
-      if_stmt = ast.stmts[0]
-      assert_instance_of AST::Stmt::If, if_stmt
+    if pairs
+      assert_equal pairs.count, stmt.pairs.count
 
-      condition = if_stmt.condition
-      assert_instance_of AST::Expr::Value, condition
-      assert_equal 1, condition.node.children[0]
+      pairs.each.with_index do |expected, index|
+        actual = stmt.pairs[index]
 
-      # _1 = y()
-      then_clause = if_stmt.then_clause
-      assert_instance_of AST::Stmt::Assign, then_clause
-      assert_instance_of AST::Variable::Pseud, then_clause.var
-      assert_instance_of AST::Expr::Call, then_clause.expr
-      assert_equal :y, then_clause.expr.name
-
-      # _1 = z
-      else_clause = if_stmt.else_clause
-      assert_instance_of AST::Stmt::Assign, else_clause
-      assert_instance_of AST::Variable::Pseud, else_clause.var
-      assert_instance_of AST::Expr::Call, else_clause.expr
-      assert_equal :z, else_clause.expr.name
-
-      assert_equal then_clause.var, else_clause.var
-
-      # _2 = _1
-      assignment = ast.stmts[1]
-      assert_instance_of AST::Stmt::Assign, assignment
-      assert_instance_of AST::Variable::Pseud, assignment.var
-      assert_instance_of AST::Expr::Var, assignment.expr
-
-      assert_equal then_clause.var, assignment.expr.var
-      refute_equal then_clause.var, assignment.var
-
-      # f(_2)
-
-      call_stmt = ast.stmts[2]
-      assert_instance_of AST::Stmt::Expr, call_stmt
-
-      call_expr = call_stmt.expr
-      assert_instance_of AST::Expr::Call, call_expr
-      assert_equal :f, call_expr.name
-      assert_instance_of AST::Expr::Var, call_expr.args[0]
-      assert_equal assignment.var, call_expr.args[0].var
-    end
-  end
-
-  def test_translate_while
-    source = <<-EOS
-      while true
-        puts 1
+        assert_value expected[0], actual.key
+        assert_value expected[1], actual.value
       end
-    EOS
-
-    translate(source) do |ast|
-      assert_instance_of AST::Stmt::While, ast
-
-      assert_nil ast.break_var
-
-      cond = ast.condition
-      assert_instance_of AST::Stmt::Expr, cond
-      assert_instance_of AST::Expr::Value, cond.expr
-      assert_equal :true, cond.expr.node.type
-
-      body = ast.body
-      assert_instance_of AST::Stmt::Expr, body
-      assert_instance_of AST::Expr::Call, body.expr
-      assert_equal :puts, body.expr.name
     end
+
+    assert_value splat, stmt.splat
   end
 
-  def test_translate_while_expr
-    source = <<-EOS
-      a = while true
-          end
-    EOS
+  def test_translate_hash
+    translate "{}" do |ast|
+      assert_hash_stmt ast
+    end
 
-    translate(source) do |ast|
-      assert_instance_of AST::Stmt::Block, ast
+    translate "{ a: 1, b: :x }" do |ast|
+      assert_hash_stmt(ast, pairs: [[:a, 1], [:b, :x]])
+    end
 
-      while_stmt = ast.stmts[0]
-      assert_instance_of AST::Stmt::While, while_stmt
-      refute_nil while_stmt.break_var
-
-      assign_stmt = ast.stmts[1]
-      assert_instance_of AST::Stmt::Assign, assign_stmt
-      assert_instance_of AST::Variable::Local, assign_stmt.var
-      assert_instance_of AST::Expr::Var, assign_stmt.expr
-      assert_instance_of AST::Variable::Pseud, assign_stmt.expr.var
-
-      assert_equal while_stmt.break_var, assign_stmt.expr.var
+    translate "{ a: 1, **f }" do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: nil, name: :f, args: []
+        assert_hash_stmt stmts[1], pairs: [[:a, 1]], splat: stmts[0].dest
+      end
     end
   end
 
   def test_local_variable
     source = <<-EOS
       a = 1
-      x = a
+      _ = a
     EOS
 
     translate(source) do |ast|
-      assert_instance_of AST::Stmt::Block, ast
-
-      assignment1 = ast.stmts.first
-      assert_instance_of AST::Stmt::Assign, assignment1
-      assert_instance_of AST::Variable::Local, assignment1.var
-      assert_equal :a, assignment1.var.name
-
-      assignment2 = ast.stmts.last
-      assert_instance_of AST::Stmt::Assign, assignment2
-      assert_instance_of AST::Variable::Local, assignment2.expr.var
-      assert_equal :a, assignment2.expr.var.name
+      assert_block_stmt ast do |stmts|
+        assert_assign_stmt stmts[0], lhs: AST::Variable::Local.new(name: :a), rhs: 1
+        assert_assign_stmt stmts[1], rhs: AST::Variable::Local.new(name: :a)
+      end
     end
   end
 
   def test_instance_variable
     source = <<-EOS
       @a = 1
-      x = @a
+      _ = @a
     EOS
 
     translate(source) do |ast|
-      assert_instance_of AST::Stmt::Block, ast
-
-      assignment1 = ast.stmts.first
-      assert_instance_of AST::Stmt::Assign, assignment1
-      assert_instance_of AST::Variable::Instance, assignment1.var
-      assert_equal :"@a", assignment1.var.name
-
-      assignment2 = ast.stmts.last
-      assert_instance_of AST::Stmt::Assign, assignment2
-      assert_instance_of AST::Variable::Instance, assignment2.expr.var
-      assert_equal :"@a", assignment2.expr.var.name
+      assert_block_stmt ast do |stmts|
+        assert_assign_stmt stmts[0], lhs: AST::Variable::Instance.new(name: :"@a"), rhs: 1
+        assert_assign_stmt stmts[1], rhs: AST::Variable::Instance.new(name: :"@a")
+      end
     end
   end
 
@@ -324,17 +376,10 @@ class ANFTranslatorTest < Minitest::Test
     EOS
 
     translate(source) do |ast|
-      assert_instance_of AST::Stmt::Block, ast
-
-      assignment1 = ast.stmts.first
-      assert_instance_of AST::Stmt::Assign, assignment1
-      assert_instance_of AST::Variable::Global, assignment1.var
-      assert_equal :"$a", assignment1.var.name
-
-      assignment2 = ast.stmts.last
-      assert_instance_of AST::Stmt::Assign, assignment2
-      assert_instance_of AST::Variable::Global, assignment2.expr.var
-      assert_equal :"$a", assignment2.expr.var.name
+      assert_block_stmt ast do |stmts|
+        assert_assign_stmt stmts[0], lhs: AST::Variable::Global.new(name: :"$a"), rhs: 2
+        assert_assign_stmt stmts[1], rhs: AST::Variable::Global.new(name: :"$a")
+      end
     end
   end
 
@@ -345,332 +390,309 @@ class ANFTranslatorTest < Minitest::Test
     EOS
 
     translate(source) do |ast|
-      assert_instance_of AST::Stmt::Block, ast
-
-      assignment1 = ast.stmts.first
-      assert_instance_of AST::Stmt::Assign, assignment1
-      assert_instance_of AST::Variable::Class, assignment1.var
-      assert_equal :"@@a", assignment1.var.name
-
-      assignment2 = ast.stmts.last
-      assert_instance_of AST::Stmt::Assign, assignment2
-      assert_instance_of AST::Variable::Class, assignment2.expr.var
-      assert_equal :"@@a", assignment2.expr.var.name
+      assert_block_stmt ast do |stmts|
+        assert_assign_stmt stmts[0], lhs: AST::Variable::Class.new(name: :"@@a"), rhs: 2
+        assert_assign_stmt stmts[1], rhs: AST::Variable::Class.new(name: :"@@a")
+      end
     end
+  end
+
+  def assert_const_assign_stmt(stmt, prefix:, name:, rhs: nil)
+    assert_instance_of AST::Stmt::ConstantAssign, stmt
+
+    assert_value prefix, stmt.prefix
+    assert_equal name, stmt.name
+    assert_value rhs, stmt.value
+  end
+
+  def assert_const_stmt(stmt, prefix:, name:)
+    assert_instance_of AST::Stmt::Constant, stmt
+
+    assert_value prefix, stmt.prefix
+    assert_equal name, stmt.name
   end
 
   def test_constant
-    source = <<-EOS
+    translate(<<-EOS) do |ast|
       C = 3
       _ = C
     EOS
-
-    translate(source) do |ast|
-      assert_instance_of AST::Stmt::Block, ast
-
-      assignment1 = ast.stmts.first
-      assert_instance_of AST::Stmt::ConstantAssign, assignment1
-
-      assignment2 = ast.stmts.last
-      assert_instance_of AST::Stmt::Assign, assignment2
-
-      const_expr = assignment2.expr
-      assert_instance_of AST::Expr::Constant, const_expr
-      assert_nil const_expr.prefix
-      assert_equal :C, const_expr.name
+      assert_block_stmt ast do |stmts|
+        assert_const_assign_stmt stmts[0], prefix: nil, name: :C, rhs: 3
+        assert_const_stmt stmts[1], prefix: nil, name: :C
+      end
     end
-  end
 
-  def test_nested_constant
-    source = <<-EOS
-      A::B::C = 3
-      _ = A::B::C
+    translate(<<-EOS) do |ast|
+      A::B = 3
+      _ = A::B
     EOS
+      assert_block_stmt ast do |stmts|
+        assert_const_stmt stmts[0], prefix: nil, name: :A
+        assert_const_assign_stmt stmts[1], prefix: stmts[0].dest, name: :B, rhs: 3
 
-    translate(source) do |ast|
-      assert_instance_of AST::Stmt::Block, ast
+        assert_const_stmt stmts[2], prefix: nil, name: :A
+        assert_const_stmt stmts[3], prefix: stmts[2].dest, name: :B
+        assert_assign_stmt stmts[4], rhs: stmts[3].dest
+      end
+    end
 
-      # _1 = A
-      lookup_a = ast.stmts[0]
-      assert_instance_of AST::Stmt::Assign, lookup_a
-      assert_instance_of AST::Variable::Pseud, lookup_a.var
-      assert_instance_of AST::Expr::Constant, lookup_a.expr
-      assert_nil lookup_a.expr.prefix
-      assert_equal :A, lookup_a.expr.name
-
-      # _2 = _1::B
-      lookup_b = ast.stmts[1]
-      assert_instance_of AST::Stmt::Assign, lookup_b
-      assert_instance_of AST::Variable::Pseud, lookup_b.var
-      assert_instance_of AST::Expr::Constant, lookup_b.expr
-      assert_instance_of AST::Expr::Var, lookup_b.expr.prefix
-      assert_equal lookup_a.var, lookup_b.expr.prefix.var
-      assert_equal :B, lookup_b.expr.name
-
-      # _3::C = C
-      assign_c = ast.stmts[2]
-      assert_instance_of AST::Stmt::ConstantAssign, assign_c
-      assert_instance_of AST::Expr::Var, assign_c.prefix
-      assert_equal lookup_b.var, assign_c.prefix.var
-      assert_equal :C, assign_c.name
-      assert_instance_of AST::Expr::Value, assign_c.expr
-      assert_equal 3, assign_c.expr.node.children.first
-
-      # _4 = A
-      lookup_a2 = ast.stmts[3]
-      assert_instance_of AST::Stmt::Assign, lookup_a2
-      assert_instance_of AST::Variable::Pseud, lookup_a2.var
-      assert_instance_of AST::Expr::Constant, lookup_a2.expr
-      assert_nil lookup_a2.expr.prefix
-      assert_equal :A, lookup_a2.expr.name
-
-      # _5 = _4::B
-      lookup_b2 = ast.stmts[4]
-      assert_instance_of AST::Stmt::Assign, lookup_b2
-      assert_instance_of AST::Variable::Pseud, lookup_b2.var
-      assert_instance_of AST::Expr::Constant, lookup_b2.expr
-      assert_instance_of AST::Expr::Var, lookup_b2.expr.prefix
-      assert_equal lookup_a2.var, lookup_b2.expr.prefix.var
-      assert_equal :B, lookup_b2.expr.name
-
-      # _ = _5::C
-      assignment = ast.stmts[5]
-      assert_instance_of AST::Stmt::Assign, assignment
-      assert_instance_of AST::Variable::Local, assignment.var
-      assert_equal :_, assignment.var.name
-      assert_instance_of AST::Expr::Constant, assignment.expr
-      assert_instance_of AST::Expr::Var, assignment.expr.prefix
-      assert_equal lookup_b2.var, assignment.expr.prefix.var
-      assert_equal :C, assignment.expr.name
+    translate(<<-EOS) do |ast|
+      ::X = 1
+      _ = ::X
+    EOS
+      assert_block_stmt ast do |stmts|
+        assert_const_assign_stmt stmts[0], prefix: :cbase, name: :X, rhs: 1
+        assert_const_stmt stmts[1], prefix: :cbase, name: :X
+      end
     end
   end
 
-  def test_assignment_expr
-    translate("a = @b = $c = @@d = true") do |ast|
-      assert_instance_of AST::Stmt::Block, ast
-
-      # @@d = true
-      assign_d = ast.stmts[0]
-      assert_instance_of AST::Stmt::Assign, assign_d
-      assert_equal :"@@d", assign_d.var.name
-
-      # _1 = @@d
-      propagation_d = ast.stmts[1]
-      assert_instance_of AST::Stmt::Assign, propagation_d
-      assert_instance_of AST::Variable::Pseud, propagation_d.var
-      assert_instance_of AST::Expr::Var, propagation_d.expr
-      assert_equal :"@@d", propagation_d.expr.var.name
-
-      # $c = _1
-      assign_c = ast.stmts[2]
-      assert_instance_of AST::Stmt::Assign, assign_c
-      assert_equal :"$c", assign_c.var.name
-      assert_instance_of AST::Expr::Var, assign_c.expr
-      assert_equal propagation_d.var, assign_c.expr.var
-
-      # _2 = $c
-      propagation_c = ast.stmts[3]
-      assert_instance_of AST::Stmt::Assign, propagation_c
-      assert_instance_of AST::Variable::Pseud, propagation_c.var
-      assert_instance_of AST::Expr::Var, propagation_c.expr
-      assert_equal :"$c", propagation_c.expr.var.name
-
-      # @b = _2
-      assign_b = ast.stmts[4]
-      assert_instance_of AST::Stmt::Assign, assign_b
-      assert_equal :"@b", assign_b.var.name
-      assert_instance_of AST::Expr::Var, assign_b.expr
-      assert_equal propagation_c.var, assign_b.expr.var
-
-      # _3 = @b
-      propagation_b = ast.stmts[5]
-      assert_instance_of AST::Stmt::Assign, propagation_b
-      assert_instance_of AST::Variable::Pseud, propagation_b.var
-      assert_instance_of AST::Expr::Var, propagation_b.expr
-      assert_equal :"@b", propagation_b.expr.var.name
-
-      # a = _3
-      assign_a = ast.stmts[6]
-      assert_instance_of AST::Stmt::Assign, assign_a
-      assert_equal :a, assign_a.var.name
-      assert_instance_of AST::Expr::Var, assign_a.expr
-      assert_equal propagation_b.var, assign_a.expr.var
-
-      assert_nil ast.stmts[7]
-    end
-  end
-
-  def test_assignment_constant
-    translate("_ = C = f()") do |ast|
-      assert_instance_of AST::Stmt::Block, ast
-
-      # _1 = f()
-      propagate_f = ast.stmts[0]
-      assert_instance_of AST::Stmt::Assign, propagate_f
-      assert_instance_of AST::Expr::Call, propagate_f.expr
-      assert_instance_of AST::Variable::Pseud, propagate_f.var
-
-      # C = _1
-      assign_c = ast.stmts[1]
-      assert_instance_of AST::Stmt::ConstantAssign, assign_c
-      assert_equal :C, assign_c.name
-      assert_instance_of AST::Expr::Var, assign_c.expr
-      assert_equal propagate_f.var, assign_c.expr.var
-
-      # _2 = _1
-      propagate_c = ast.stmts[2]
-      assert_instance_of AST::Stmt::Assign, propagate_c
-      assert_instance_of AST::Variable::Pseud, propagate_c.var
-      assert_instance_of AST::Expr::Var, propagate_c.expr
-      assert_equal propagate_f.var, propagate_c.expr.var
-
-      # _ = _2
-      assign = ast.stmts[3]
-      assert_instance_of AST::Stmt::Assign, assign
-      assert_instance_of AST::Variable::Local, assign.var
-      assert_equal :_, assign.var.name
-      assert_instance_of AST::Expr::Var, assign.expr
-      assert_equal propagate_c.var, assign.expr.var
-
-      assert_nil ast.stmts[4]
-    end
+  def assert_def_stmt(stmt, object:, name:)
+    assert_instance_of AST::Stmt::Def, stmt
+    assert_value object, stmt.object
+    assert_equal name, stmt.name
+    yield stmt.params, stmt.body if block_given?
   end
 
   def test_translate_def
     translate("def f(); 3; end") do |ast|
-      assert_instance_of AST::Stmt::Def, ast
+      assert_def_stmt ast, object: nil, name: :f do |params, body|
+        assert_empty params
+        assert_value_stmt 3, body
+      end
+    end
 
-      assert_nil ast.var
-      assert_nil ast.object
-      assert_equal :f, ast.name
-      assert_equal [], ast.params
+    translate("def f(); end") do |ast|
+      assert_def_stmt ast, object: nil, name: :f do |params, body|
+        assert_empty params
+        assert_nil body
+      end
+    end
 
-      body = ast.body
-      assert_instance_of AST::Stmt::Expr, body
-      assert_instance_of AST::Expr::Value, body.expr
-      assert_equal 3, body.expr.node.children.first
+    translate("def f(a, b=1, *c, d:, e: (x = 1; x+1), **f, &g); end") do |ast|
+      assert_def_stmt ast, object: nil, name: :f do |params|
+        assert_def_param params[0], type: :arg, name: :a, default: nil
+        assert_def_param params[1], type: :optarg, name: :b do |stmt|
+          assert_value_stmt 1, stmt
+        end
+        assert_def_param params[2], type: :restarg, name: :c, default: nil
+        assert_def_param params[3], type: :kwarg, name: :d, default: nil
+        assert_def_param params[4], type: :kwoptarg, name: :e do |stmt|
+          assert_block_stmt stmt do |stmts|
+            assert_assign_stmt stmts[0], lhs: AST::Variable::Local.new(name: :x), rhs: 1
+            assert_call_stmt stmts[1], receiver: AST::Variable::Local.new(name: :x), name: :+, args: [1]
+          end
+        end
+        assert_def_param params[5], type: :kwrestarg, name: :f, default: nil
+        assert_def_param params[6], type: :blockarg, name: :g, default: nil
+      end
+    end
+
+    translate("private def hoge; end") do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_def_stmt stmts[0], object: nil, name: :hoge
+        assert_call_stmt stmts[1], receiver: nil, name: :private, args: [stmts[0].dest]
+      end
+    end
+
+    translate "def (f()).g(); end" do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: nil, name: :f, args: []
+        assert_def_stmt stmts[1], object: stmts[0].dest, name: :g
+      end
     end
   end
 
-  def test_translate_def_without_body
-    translate("def f(); end") do |ast|
-      assert_instance_of AST::Stmt::Def, ast
+  def assert_class_stmt(stmt, name:, super_class:)
+    assert_instance_of AST::Stmt::Class, stmt
 
-      assert_nil ast.var
-      assert_nil ast.object
-      assert_equal :f, ast.name
-      assert_equal [], ast.params
+    assert_value name, stmt.name
+    assert_value super_class, stmt.super_class
 
+    yield stmt.body if block_given?
+  end
+
+  def test_translate_class
+    translate <<-EOS do |ast|
+      class A; end
+    EOS
+      assert_block_stmt ast do |stmts|
+        assert_const_stmt stmts[0], prefix: nil, name: :A
+        assert_class_stmt stmts[1], name: stmts[0].dest, super_class: nil do |body|
+          assert_nil body
+        end
+      end
+    end
+
+    translate <<-EOS do |ast|
+      class A::B < Object; end
+    EOS
+      assert_block_stmt ast do |stmts|
+        assert_const_stmt stmts[0], prefix: nil, name: :A
+        assert_const_stmt stmts[1], prefix: stmts[0].dest, name: :B
+        assert_const_stmt stmts[2], prefix: nil, name: :Object
+        assert_class_stmt stmts[3], name: stmts[1].dest, super_class: stmts[2].dest do |body|
+          assert_nil body
+        end
+      end
+    end
+  end
+
+  def test_translate_module
+    translate "module X; end" do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_const_stmt stmts[0], prefix: nil, name: :X
+
+        assert_instance_of AST::Stmt::Module, stmts[1]
+        assert_value stmts[0].dest, stmts[1].name
+
+        assert_nil stmts[1].body
+      end
+    end
+  end
+
+  def test_singleton_class
+    translate "class <<self; end" do |ast|
+      assert_instance_of AST::Stmt::SingletonClass, ast
+      assert_value :self, ast.object
       assert_nil ast.body
     end
   end
 
-  def test_translate_def_with_params
-    translate("def f(a, b=1, *c, d:, e: (x = 1; x+1), **f, &g); end") do |ast|
-      assert_instance_of AST::Stmt::Def, ast
-
-      assert_def_param ast.params[0], type: :arg, name: :a, default: nil
-
-      assert_def_param ast.params[1], type: :optarg, name: :b, default: AST::Stmt::Expr do |stmt|
-        assert_instance_of AST::Expr::Value, stmt.expr
-        assert_equal 1, stmt.expr.node.children.first
-      end
-
-      assert_def_param ast.params[2], type: :restarg, name: :c, default: nil
-
-      assert_def_param ast.params[3], type: :kwarg, name: :d, default: nil
-
-      assert_def_param ast.params[4], type: :kwoptarg, name: :e, default: AST::Stmt::Block
-
-      assert_def_param ast.params[5], type: :kwrestarg, name: :f, default: nil
-
-      assert_def_param ast.params[6], type: :blockarg, name: :g, default: nil
+  def test_translate_jump
+    translate "retry" do |ast|
+      assert_jump_stmt ast, type: :retry, args: nil
     end
-  end
 
-  def test_translate_def_expr
-    translate("private def hoge; end") do |ast|
+    translate "next" do |ast|
+      assert_jump_stmt ast, type: :next, args: nil
+    end
+
+    translate "break" do |ast|
+      assert_jump_stmt ast, type: :break, args: []
+    end
+
+    translate "break f()" do |ast|
       assert_block_stmt ast do |stmts|
-        def_stmt = stmts[0]
-        assert_instance_of AST::Stmt::Def, def_stmt
-        assert_equal :hoge, def_stmt.name
-        assert_instance_of AST::Variable::Pseud, def_stmt.var
-
-        assert_assign_stmt stmts[1], var: AST::Variable::Pseud do |expr|
-          assert_instance_of AST::Expr::Var, expr
-          assert_equal def_stmt.var, expr.var
-        end
-
-        call_stmt = stmts[2]
-        assert_instance_of AST::Stmt::Expr, call_stmt
-
-        call_expr = call_stmt.expr
-        assert_instance_of AST::Expr::Call, call_expr
-        assert_equal :private, call_expr.name
-        assert_equal stmts[1].var, call_expr.args.first.var
+        assert_call_stmt stmts[0], receiver: nil, name: :f, args: []
+        assert_jump_stmt stmts[1], type: :break, args: [stmts[0].dest]
       end
     end
   end
 
-  def test_translate_defs
-    translate "def (f()).g(); end" do |ast|
+  def test_translate_yield
+    translate "yield 1, *f" do |ast|
       assert_block_stmt ast do |stmts|
-        assert_assign_stmt stmts[0], var: AST::Variable::Pseud do |expr|
-          assert_call_expr expr, name: :f, receiver: nil do |args|
-            assert_empty args
-          end
-        end
+        assert_call_stmt stmts[0], receiver: nil, name: :f, args: []
 
-        def_stmt = stmts[1]
-        assert_instance_of AST::Stmt::Def, def_stmt
-        assert_equal :g, def_stmt.name
-        assert_equal [], def_stmt.params
-        assert_nil def_stmt.body
-
-        assert_instance_of AST::Expr::Var, def_stmt.object
-        assert_equal stmts[0].var, def_stmt.object.var
+        assert_instance_of AST::Stmt::Yield, stmts[1]
+        assert_value 1, stmts[1].args[0]
+        assert_value AST::Variable::Splat.new(var: stmts[0].dest), stmts[1].args[1]
       end
     end
   end
 
-  def assert_expr_stmt(stmt)
-    assert_instance_of AST::Stmt::Expr, stmt
-    yield stmt.expr
+  def test_translate_lambda
+    translate "->(x) { x }" do |ast|
+      assert_instance_of AST::Stmt::Lambda, ast
+
+      assert_def_param ast.params[0], type: :arg, name: :x
+      assert_value_stmt AST::Variable::Local.new(name: :x), ast.body
+    end
   end
 
-  def assert_call_expr(expr, name:, receiver: nil)
-    assert_instance_of AST::Expr::Call, expr
-    assert_equal name, expr.name
+  def test_translate_dstr
+    translate '"hello #{f()}"' do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: nil, name: :f, args: []
 
-    case receiver
-    when Class
-      assert_instance_of receiver, expr.receiver
-    else
-      assert_equal receiver, expr.receiver
+        assert_instance_of AST::Stmt::Dstr, stmts[1]
+        assert_value "hello ", stmts[1].components[0]
+        assert_value stmts[0].dest, stmts[1].components[1]
+      end
     end
+  end
 
-    yield(expr.args, expr.block) if block_given?
+  def test_translate_and
+    translate "1 && self" do |ast|
+      assert_if_stmt ast, condition: 1 do |t, f|
+        assert_value_stmt :self, t
+        assert_nil f
+      end
+    end
+  end
+
+  def test_translate_or
+    translate "1 || 2" do |ast|
+      assert_if_stmt ast, condition: 1 do |t, f|
+        assert_nil t
+        assert_value_stmt 2, f
+      end
+    end
+  end
+
+  def test_translate_masgn
+    translate "a, *b = x" do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: nil, name: :x, args: []
+
+        assert_instance_of AST::Stmt::MAssign, stmts[1]
+        assert_value stmts[0].dest, stmts[1].rhs
+        assert_equal AST::Variable::Local.new(name: :a), stmts[1].vars[0]
+        assert_equal AST::Variable::Splat.new(var: AST::Variable::Local.new(name: :b)), stmts[1].vars[1]
+      end
+    end
+  end
+
+  def test_translate_rescue
+    translate <<-EOS do |ast|
+      begin
+        0
+      rescue A => exn
+        1
+      rescue
+        2
+      end
+    EOS
+      assert_instance_of AST::Stmt::Rescue, ast
+
+      assert_value_stmt 0, ast.body
+
+      assert_equal 2, ast.rescues.size
+
+      r1 = ast.rescues[0]
+      assert_block_stmt r1.class_stmt do |stmts|
+        assert_const_stmt stmts[0], prefix: nil, name: :A
+        assert_array_stmt stmts[1], elements: [stmts[0].dest]
+      end
+      assert_equal AST::Variable::Local.new(name: :exn), r1.var
+      assert_value_stmt 1, r1.body
+
+      r2 = ast.rescues[1]
+      assert_nil r2.class_stmt
+      assert_nil r2.var
+      assert_value_stmt 2, r2.body
+    end
+  end
+
+  def test_translate_ensure
+    translate <<-EOS do |ast|
+      begin
+        0
+      ensure
+        1
+      end
+    EOS
+      assert_instance_of AST::Stmt::Ensure, ast
+      assert_value_stmt 0, ast.ensured
+      assert_value_stmt 1, ast.ensuring
+    end
   end
 
   def assert_block_stmt(stmt)
     assert_instance_of AST::Stmt::Block, stmt
-    yield stmt.stmts
-  end
-
-  def assert_assign_stmt(stmt, var: nil)
-    assert_instance_of AST::Stmt::Assign, stmt
-    if var
-      case var
-      when Class
-        assert_instance_of var, stmt.var
-      when nil
-        # skip
-      else
-        assert_equal var, stmt.var
-      end
-    end
-
-    yield stmt.expr if block_given?
+    yield stmt.stmts if block_given?
   end
 
   def assert_def_param(param, type:, name:, default: false)
@@ -678,8 +700,6 @@ class ANFTranslatorTest < Minitest::Test
     assert_equal name, param[1]
 
     case default
-    when Class
-      assert_instance_of default, param[2]
     when nil
       assert_nil param[2]
     end

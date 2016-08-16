@@ -4,8 +4,10 @@ module Contror
       module Stmt
         class Base
           attr_reader :node
+          attr_reader :dest
 
-          def initialize(node:)
+          def initialize(dest:, node:)
+            @dest = dest
             @node = node
           end
         end
@@ -13,29 +15,54 @@ module Contror
         class Block < Base
           attr_reader :stmts
 
-          def initialize(stmts:, node:)
+          def initialize(dest:, stmts:, node:)
             @stmts = stmts
-            super(node: node)
+            super(dest: dest, node: node)
           end
         end
 
-        class Expr < Base
-          attr_reader :expr
+        class Value < Base
+          attr_reader :value
 
-          def initialize(expr:, node:)
-            @expr = expr
-            super(node: node)
+          def initialize(dest:, value:, node:)
+            @value = value
+            super(dest: dest, node: node)
           end
         end
 
         class Assign < Base
-          attr_reader :var
-          attr_reader :expr
+          attr_reader :lhs
+          attr_reader :rhs
 
-          def initialize(var:, expr:, node:)
-            @var = var
-            @expr = expr
-            super(node: node)
+          def initialize(dest:, lhs:, rhs:, node:)
+            @lhs = lhs
+            @rhs = rhs
+            super(dest: dest, node: node)
+          end
+        end
+
+        class Call < Base
+          class Block
+            attr_reader :params
+            attr_reader :body
+
+            def initialize(params:, body:)
+              @params = params
+              @body = body
+            end
+          end
+
+          attr_reader :receiver
+          attr_reader :name
+          attr_reader :args
+          attr_reader :block
+
+          def initialize(dest:, receiver:, name:, args:, block:, node:)
+            @receiver = receiver
+            @name = name
+            @args = args
+            @block = block
+            super(dest: dest, node: node)
           end
         end
 
@@ -44,24 +71,20 @@ module Contror
           attr_reader :then_clause
           attr_reader :else_clause
 
-          def initialize(condition:, then_clause:, else_clause:, node:)
+          def initialize(dest:, condition:, then_clause:, else_clause:, node:)
             @condition = condition
             @then_clause = then_clause
             @else_clause = else_clause
-            super(node: node)
+            super(dest: dest, node: node)
           end
         end
 
-        class While < Base
-          attr_reader :condition
+        class Loop < Base
           attr_reader :body
-          attr_reader :break_var
 
-          def initialize(condition:, body:, break_var:, node:)
-            @condition = condition
+          def initialize(dest:, body:, node:)
             @body = body
-            @break_var = break_var
-            super(node: node)
+            super(dest: dest, node: node)
           end
         end
 
@@ -70,124 +93,188 @@ module Contror
           attr_reader :type
           attr_reader :args
 
-          def initialize(type:, args:, node:)
+          def initialize(dest:, type:, args:, node:)
             @type = type
             @args = args
-            super(node: node)
+            super(dest: dest, node: node)
           end
         end
 
         class ConstantAssign < Base
           attr_reader :prefix
           attr_reader :name
-          attr_reader :expr
+          attr_reader :value
 
-          def initialize(prefix:, name:, expr:, node:)
+          def initialize(dest:, prefix:, name:, value:, node:)
             @prefix = prefix
             @name = name
-            @expr = expr
-            super(node: node)
+            @value = value
+            super(dest: dest, node: node)
           end
         end
 
-        class Def < Base
-          attr_reader :var
-          attr_reader :object
+        class Constant < Base
+          attr_reader :prefix
           attr_reader :name
-          attr_reader :params
-          attr_reader :body
 
-          def initialize(var:, object:, name:, params:, body:, node:)
-            @var = var
-            @object = object
+          def initialize(dest:, prefix:, name:, node:)
+            @prefix = prefix
             @name = name
-            @params = params
-            @body = body
-            super(node: node)
-          end
-        end
-      end
-
-      module Expr
-        class Base
-          attr_reader :node
-
-          def initialize(node:)
-            @node = node
-          end
-        end
-
-        class IteratorBlock
-          attr_reader :params
-          attr_reader :body
-
-          def initialize(params:, body:)
-            @params = params
-            @body = body
-          end
-        end
-
-        class Call < Base
-          attr_reader :receiver
-          attr_reader :name
-          attr_reader :args
-          attr_reader :block
-
-          def initialize(receiver:, name:, args:, block:, node:)
-            @receiver = receiver
-            @name = name
-            @args = args
-            @block = block
-            super(node: node)
-          end
-        end
-
-        class Var < Base
-          attr_reader :var
-
-          def initialize(var:, node:)
-            @var = var
-            super(node: node)
+            super(dest: dest, node: node)
           end
         end
 
         class Yield < Base
           attr_reader :args
 
-          def initialize(args:, node:)
+          def initialize(dest:, args:, node:)
             @args = args
-            super(node: node)
-          end
-        end
-
-        class Value < Base; end
-
-        class Constant < Base
-          attr_reader :prefix
-          attr_reader :name
-
-          def initialize(prefix:, name:, node:)
-            @prefix = prefix
-            @name = name
-            super(node: node)
+            super(dest: dest, node: node)
           end
         end
 
         class Array < Base
           attr_reader :elements
 
-          def initialize(elements:, node:)
+          def initialize(dest:, elements:, node:)
             @elements = elements
-            super(node: node)
+            super(dest: dest, node: node)
           end
         end
 
-        class BlockPass < Base
-          attr_reader :var
+        class Hash < Base
+          class Pair
+            attr_reader :key
+            attr_reader :value
 
-          def initialize(var:, node:)
-            @var = var
-            super(node: node)
+            def initialize(key:, value:)
+              @key = key
+              @value = value
+            end
+          end
+
+          attr_reader :pairs
+          attr_reader :splat
+
+          def initialize(dest:, pairs:, splat:, node:)
+            @pairs = pairs
+            @splat = splat
+            super(dest: dest, node: node)
+          end
+        end
+
+        class Dstr < Base
+          attr_reader :components
+
+          def initialize(dest:, components:, node:)
+            @components = components
+            super(dest: dest, node: node)
+          end
+        end
+
+        class MAssign < Base
+          attr_reader :vars
+          attr_reader :rhs
+
+          def initialize(dest:, vars:, rhs:, node:)
+            @vars = vars
+            @rhs = rhs
+            super(dest: dest, node: node)
+          end
+        end
+
+        class Rescue < Base
+          class Clause
+            attr_reader :class_stmt
+            attr_reader :var
+            attr_reader :body
+
+            def initialize(class_stmt:, var:, body:)
+              @class_stmt = class_stmt
+              @var = var
+              @body = body
+            end
+          end
+
+          attr_reader :body
+          attr_reader :rescues
+
+          def initialize(dest:, body:, rescues:, node:)
+            @body = body
+            @rescues = rescues
+            super(dest: dest, node: node)
+          end
+        end
+
+        class Ensure < Base
+          attr_reader :ensured
+          attr_reader :ensuring
+
+          def initialize(dest:, ensured:, ensuring:, node:)
+            @ensured = ensured
+            @ensuring = ensuring
+            super(dest: dest, node: node)
+          end
+        end
+
+        class Class < Base
+          attr_reader :name
+          attr_reader :super_class
+          attr_reader :body
+
+          def initialize(dest:, name:, super_class:, body:, node:)
+            @name = name
+            @super_class = super_class
+            @body = body
+            super(dest: dest, node: node)
+          end
+        end
+
+        class Module < Base
+          attr_reader :name
+          attr_reader :body
+
+          def initialize(dest:, name:, body:, node:)
+            @name = name
+            @body = body
+            super(dest: dest, node: node)
+          end
+        end
+
+        class SingletonClass < Base
+          attr_reader :object
+          attr_reader :body
+
+          def initialize(dest:, object:, body:, node:)
+            @object = object
+            @body = body
+            super(dest: dest, node: node)
+          end
+        end
+
+        class Def < Base
+          attr_reader :object
+          attr_reader :name
+          attr_reader :params
+          attr_reader :body
+
+          def initialize(dest:, object:, name:, params:, body:, node:)
+            @object = object
+            @name = name
+            @params = params
+            @body = body
+            super(dest: dest, node: node)
+          end
+        end
+
+        class Lambda < Base
+          attr_reader :params
+          attr_reader :body
+
+          def initialize(dest:, params:, body:, node:)
+            @params = params
+            @body = body
+            super(dest: dest, node: node)
           end
         end
       end
@@ -250,6 +337,40 @@ module Contror
           def initialize(name:)
             @name = name
             super()
+          end
+        end
+
+        class BlockPass < Base
+          attr_reader :var
+
+          def initialize(var:)
+            @var = var
+            super()
+          end
+
+          def ==(other)
+            other.is_a?(self.class) && var == other.var
+          end
+
+          def hash
+            self.class.hash ^ var.hash
+          end
+        end
+
+        class Splat < Base
+          attr_reader :var
+
+          def initialize(var:)
+            @var = var
+            super()
+          end
+
+          def ==(other)
+            other.is_a?(self.class) && var == other.var
+          end
+
+          def hash
+            self.class.hash ^ var.hash
           end
         end
 
