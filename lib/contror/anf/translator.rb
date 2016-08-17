@@ -126,6 +126,21 @@ module Contror
 
           push_stmt AST::Stmt::Dsym.new(dest: fresh_var, components: components, node: node)
 
+        when :xstr
+          components = []
+          node.children.each do |child|
+            components << normalize_node(child)
+          end
+
+          push_stmt AST::Stmt::Xstr.new(dest: fresh_var, components: components, node: node)
+
+        when :for
+          var = translate_var(node.children[0])
+          collection = normalize_node(node.children[1])
+          body = node.children[2].try {|body_node| translate(node: body_node) }
+
+          push_stmt AST::Stmt::For.new(dest: fresh_var, var: var, collection: collection, body: body, node: node)
+
         when :while
           loop = with_new_block node do
             cond = normalize_node(node.children[0])
@@ -164,7 +179,7 @@ module Contror
           elements = []
 
           node.children.each do |child|
-            elements << normalize_node(child)
+            elements << translate_arg(child)
           end
 
           push_stmt AST::Stmt::Array.new(dest: fresh_var, elements: elements, node: node)
@@ -431,6 +446,11 @@ module Contror
             raise "#{lhs.type}"
           end
 
+        when :match_with_lvasgn
+          lhs = normalize_node node.children[0]
+          rhs = normalize_node node.children[1]
+
+          push_stmt AST::Stmt::MatchWithLasgn.new(dest: fresh_var, lhs: lhs, rhs: rhs, node: node)
 
         else
           if value_node?(node)
@@ -523,7 +543,7 @@ module Contror
           true
         when :cbase
           true
-        when :nth_ref, :defined?
+        when :nth_ref, :defined?, :alias
           true
         else
           false

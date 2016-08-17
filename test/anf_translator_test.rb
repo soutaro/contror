@@ -847,6 +847,54 @@ class ANFTranslatorTest < Minitest::Test
     end
   end
 
+  def test_translate_match_with_lasgn
+    translate "/a/ =~ y" do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_instance_of AST::Stmt::Regexp, stmts[0]
+        assert_call_stmt stmts[1], receiver: nil, name: :y, args: []
+
+        assert_instance_of AST::Stmt::MatchWithLasgn, stmts[2]
+        assert_value stmts[0].dest, stmts[2].lhs
+        assert_value stmts[1].dest, stmts[2].rhs
+      end
+    end
+  end
+
+  def test_translate_alias
+    translate "alias a b" do |ast|
+      assert_value_stmt :alias, ast
+    end
+  end
+
+  def test_translate_xstr
+    translate '`ls #{names}`' do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: nil, name: :names, args: []
+        assert_instance_of AST::Stmt::Xstr, stmts[1]
+        assert_value "ls ", stmts[1].components[0]
+        assert_value stmts[0].dest, stmts[1].components[1]
+      end
+    end
+  end
+
+  def test_translate_for
+    translate <<-EOS do |ast|
+      for x in abc
+        x + 1
+      end
+    EOS
+
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: nil, name: :abc, args: []
+
+        assert_instance_of AST::Stmt::For, stmts[1]
+        assert_value AST::Variable::Local.new(name: :x), stmts[1].var
+        assert_value stmts[0].dest, stmts[1].collection
+        assert_call_stmt stmts[1].body, receiver: AST::Variable::Local.new(name: :x), name: :+, args: [1]
+      end
+    end
+  end
+
   def assert_block_stmt(stmt)
     assert_instance_of AST::Stmt::Block, stmt
     yield stmt.stmts if block_given?

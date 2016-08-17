@@ -87,6 +87,19 @@ module Contror
             super(dest: dest, node: node)
           end
         end
+        
+        class For < Base
+          attr_reader :var
+          attr_reader :collection
+          attr_reader :body
+          
+          def initialize(dest:, var:, collection:, body:, node:)
+            @var = var
+            @collection = collection
+            @body = body
+            super(dest: dest, node: node)
+          end
+        end
 
         # Jump statement includes return, break, next, and retry
         class Jump < Base
@@ -164,6 +177,15 @@ module Contror
         end
 
         class Dstr < Base
+          attr_reader :components
+
+          def initialize(dest:, components:, node:)
+            @components = components
+            super(dest: dest, node: node)
+          end
+        end
+
+        class Xstr < Base
           attr_reader :components
 
           def initialize(dest:, components:, node:)
@@ -327,6 +349,17 @@ module Contror
           def initialize(dest:, content:, option:, node:)
             @content = content
             @option = option
+            super(dest: dest, node: node)
+          end
+        end
+
+        class MatchWithLasgn < Base
+          attr_reader :lhs
+          attr_reader :rhs
+
+          def initialize(dest:, lhs:, rhs:, node:)
+            @lhs = lhs
+            @rhs = rhs
             super(dest: dest, node: node)
           end
         end
