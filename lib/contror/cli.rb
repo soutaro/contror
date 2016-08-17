@@ -36,6 +36,17 @@ module Contror
       end
     end
 
+    desc "dot PATH", "print dot"
+    def dot(path)
+      path = Pathname(path)
+
+      node = Parser::CurrentRuby.parse(path.read, path.to_s)
+      anf = ANF::Translator.new.translate(node: node)
+      graph = Graph.new(stmt: anf)
+
+      p graph
+    end
+
     private
 
     def each_ruby_script(args, &block)
