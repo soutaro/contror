@@ -750,6 +750,19 @@ class ANFTranslatorTest < Minitest::Test
     end
   end
 
+  def test_translate_super
+    translate "super" do |ast|
+      assert_instance_of AST::Stmt::ZSuper, ast
+    end
+
+    translate "super(1)" do |ast|
+      assert_instance_of AST::Stmt::Super, ast
+
+      assert_equal 1, ast.args.count
+      assert_value 1, ast.args[0]
+    end
+  end
+
   def assert_block_stmt(stmt)
     assert_instance_of AST::Stmt::Block, stmt
     yield stmt.stmts if block_given?

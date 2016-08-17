@@ -331,6 +331,17 @@ module Contror
 
           push_stmt AST::Stmt::Case.new(dest: fresh_var, condition: condition, whens: whens, node: node)
 
+        when :zsuper
+          push_stmt AST::Stmt::ZSuper.new(dest: fresh_var, node: node)
+
+        when :super
+          args = []
+          node.children.each do |arg|
+            args << translate_arg(arg)
+          end
+
+          push_stmt AST::Stmt::Super.new(dest: fresh_var, args: args, node: node)
+
         else
           if value_node?(node)
             push_stmt AST::Stmt::Value.new(dest: fresh_var, value: node, node: node)

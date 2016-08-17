@@ -298,6 +298,18 @@ module Contror
             super(dest: dest, node: node)
           end
         end
+
+        class ZSuper < Base
+        end
+
+        class Super < Base
+          attr_reader :args
+
+          def initialize(dest:, args:, node:)
+            @args = args
+            super(dest: dest, node: node)
+          end
+        end
       end
 
       module Variable
