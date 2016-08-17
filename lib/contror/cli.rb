@@ -30,6 +30,7 @@ module Contror
 
         node = Parser::CurrentRuby.parse(path.read, path.to_s)
         anf = ANF::Translator.new.translate(node: node)
+
         pp anf
       end
     end

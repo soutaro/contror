@@ -690,6 +690,66 @@ class ANFTranslatorTest < Minitest::Test
     end
   end
 
+  def test_translate_case
+    translate <<-EOS do |ast|
+      case 1
+      when 2
+        3
+      else
+        4
+      end
+    EOS
+      assert_instance_of AST::Stmt::Case, ast
+
+      assert_value 1, ast.condition
+
+      assert_equal 2, ast.whens.count
+
+      assert_value_stmt 2, ast.whens[0].pattern
+      assert_value_stmt 3, ast.whens[0].body
+
+      assert_nil ast.whens[1].pattern
+      assert_value_stmt 4, ast.whens[1].body
+    end
+
+    translate <<-EOS do |ast|
+      case
+      when 2
+        3
+      else
+        4
+      end
+    EOS
+      assert_instance_of AST::Stmt::Case, ast
+
+      assert_nil ast.condition
+
+      assert_equal 2, ast.whens.count
+
+      assert_value_stmt 2, ast.whens[0].pattern
+      assert_value_stmt 3, ast.whens[0].body
+
+      assert_nil ast.whens[1].pattern
+      assert_value_stmt 4, ast.whens[1].body
+    end
+
+    translate <<-EOS do |ast|
+      case
+      when 2
+        3
+      end
+    EOS
+      assert_instance_of AST::Stmt::Case, ast
+
+      assert_nil ast.condition
+
+      assert_equal 1, ast.whens.count
+
+      assert_value_stmt 2, ast.whens[0].pattern
+      assert_value_stmt 3, ast.whens[0].body
+    end
+  end
+
   def assert_block_stmt(stmt)
     assert_instance_of AST::Stmt::Block, stmt
     yield stmt.stmts if block_given?

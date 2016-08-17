@@ -277,6 +277,27 @@ module Contror
             super(dest: dest, node: node)
           end
         end
+
+        class Case < Base
+          class When
+            attr_reader :pattern
+            attr_reader :body
+
+            def initialize(pattern:, body:)
+              @pattern = pattern
+              @body = body
+            end
+          end
+
+          attr_reader :condition
+          attr_reader :whens
+
+          def initialize(dest:, condition:, whens:, node:)
+            @condition = condition
+            @whens = whens
+            super(dest: dest, node: node)
+          end
+        end
       end
 
       module Variable

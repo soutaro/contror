@@ -314,6 +314,23 @@ module Contror
 
           push_stmt AST::Stmt::Ensure.new(dest: fresh_var, ensured: ensured, ensuring: ensuring, node: node)
 
+        when :case
+          condition = node.children[0].try {|cond_node| normalize_node(cond_node) }
+
+          whens = []
+          node.children.drop(1).compact.each do |when_node|
+            if when_node.type == :when
+              pattern = translate(node: when_node.children[0])
+              body = when_node.children[1].try {|body_node| translate(node: body_node) }
+              whens << AST::Stmt::Case::When.new(pattern: pattern, body: body)
+            else
+              body = translate(node: when_node)
+              whens << AST::Stmt::Case::When.new(pattern: nil, body: body)
+            end
+          end
+
+          push_stmt AST::Stmt::Case.new(dest: fresh_var, condition: condition, whens: whens, node: node)
+
         else
           if value_node?(node)
             push_stmt AST::Stmt::Value.new(dest: fresh_var, value: node, node: node)
