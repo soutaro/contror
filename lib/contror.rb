@@ -1,8 +1,8 @@
 require "contror/version"
 
 require "parser/current"
-require "contror/cli"
 
+require 'contror/try'
 require 'contror/anf/ast'
 require 'contror/anf/translator'
 

@@ -1,16 +1,6 @@
 module Contror
   module ANF
-    module ObjectTry
-      refine ::Object do
-        def try
-          if self != nil
-            yield self
-          end
-        end
-      end
-    end
-
-    using ObjectTry
+    using Contror::ObjectTry
 
     class Translator
       attr_reader :blocks
