@@ -172,6 +172,15 @@ module Contror
           end
         end
 
+        class Dsym < Base
+          attr_reader :components
+
+          def initialize(dest:, components:, node:)
+            @components = components
+            super(dest: dest, node: node)
+          end
+        end
+
         class MAssign < Base
           attr_reader :vars
           attr_reader :rhs
@@ -318,6 +327,19 @@ module Contror
           def initialize(dest:, content:, option:, node:)
             @content = content
             @option = option
+            super(dest: dest, node: node)
+          end
+        end
+
+        class Range < Base
+          attr_reader :begin
+          attr_reader :end
+          attr_reader :type
+
+          def initialize(dest:, beginv:, endv:, type:, node:)
+            @begin = beginv
+            @end = endv
+            @type = type
             super(dest: dest, node: node)
           end
         end

@@ -118,6 +118,14 @@ module Contror
 
           push_stmt AST::Stmt::Dstr.new(dest: fresh_var, components: components, node: node)
 
+        when :dsym
+          components = []
+          node.children.each do |child|
+            components << normalize_node(child)
+          end
+
+          push_stmt AST::Stmt::Dsym.new(dest: fresh_var, components: components, node: node)
+
         when :while
           loop = with_new_block node do
             cond = normalize_node(node.children[0])
@@ -355,6 +363,13 @@ module Contror
           end
 
           push_stmt AST::Stmt::Regexp.new(dest: fresh_var, content: content, option: option, node: node)
+
+        when :erange, :irange
+          type = node.type == :erange ? :exclusive : :inclusive
+          beginv = node.children[0].try {|n| normalize_node(n) }
+          endv = node.children[1].try {|n| normalize_node(n) }
+
+          push_stmt AST::Stmt::Range.new(dest: fresh_var, beginv: beginv, endv: endv, type: type, node: node)
 
         else
           if value_node?(node)

@@ -782,6 +782,35 @@ class ANFTranslatorTest < Minitest::Test
     end
   end
 
+  def test_translate_range
+    translate "1...2" do |ast|
+      assert_instance_of AST::Stmt::Range, ast
+      assert_value 1, ast.begin
+      assert_value 2, ast.end
+      assert_equal :exclusive, ast.type
+    end
+
+    translate "1..2" do |ast|
+      assert_instance_of AST::Stmt::Range, ast
+      assert_value 1, ast.begin
+      assert_value 2, ast.end
+      assert_equal :inclusive, ast.type
+    end
+  end
+
+  def test_translate_dsym
+    translate ':"#{test}="' do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: nil, name: :test, args: []
+
+        assert_instance_of AST::Stmt::Dsym ,stmts[1]
+        assert_equal 2, stmts[1].components.size
+        assert_value stmts[0].dest, stmts[1].components[0]
+        assert_value "=", stmts[1].components[1]
+      end
+    end
+  end
+
   def assert_block_stmt(stmt)
     assert_instance_of AST::Stmt::Block, stmt
     yield stmt.stmts if block_given?
