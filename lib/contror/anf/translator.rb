@@ -318,7 +318,7 @@ module Contror
           if value_node?(node)
             push_stmt AST::Stmt::Value.new(dest: fresh_var, value: node, node: node)
           else
-            pp unknown_node: node
+            p unknown_node: node
             raise "unknown_node #{node.type}"
           end
         end
