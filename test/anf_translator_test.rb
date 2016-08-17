@@ -811,6 +811,42 @@ class ANFTranslatorTest < Minitest::Test
     end
   end
 
+  def test_translate_or_asgn
+    translate "a ||= 3" do |ast|
+      assert_if_stmt ast, condition: AST::Variable::Local.new(name: :a) do |t, f|
+        assert_nil t
+        assert_assign_stmt f, lhs: AST::Variable::Local.new(name: :a), rhs: 3
+      end
+    end
+
+    translate "1.b ||= 3" do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: 1, name: :b, args: []
+        assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
+          assert_nil t
+          assert_call_stmt f, receiver: 1, name: :b=, args: [3]
+        end
+      end
+    end
+  end
+
+  def test_translate_opasgn
+    translate "x += 1" do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: AST::Variable::Local.new(name: :x), name: :+, args: [1]
+        assert_assign_stmt stmts[1], lhs: AST::Variable::Local.new(name: :x), rhs: stmts[0].dest
+      end
+    end
+
+    translate "1.f *= 2" do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: 1, name: :f, args: []
+        assert_call_stmt stmts[1], receiver: stmts[0].dest, name: :*, args: [2]
+        assert_call_stmt stmts[2], receiver: 1, name: :f=, args: [stmts[1].dest]
+      end
+    end
+  end
+
   def assert_block_stmt(stmt)
     assert_instance_of AST::Stmt::Block, stmt
     yield stmt.stmts if block_given?

@@ -371,6 +371,67 @@ module Contror
 
           push_stmt AST::Stmt::Range.new(dest: fresh_var, beginv: beginv, endv: endv, type: type, node: node)
 
+        when :or_asgn
+          lhs = node.children[0]
+          rhs = node.children[1]
+
+          case lhs.type
+          when :lvasgn, :ivasgn, :gvasgn, :cvasgn
+            var = translate_var(lhs)
+            assignment = with_new_block node do
+              rhs_var = normalize_node(rhs)
+              push_stmt AST::Stmt::Assign.new(dest: fresh_var, lhs: var, rhs: rhs_var, node: node)
+            end
+
+            push_stmt AST::Stmt::If.new(dest: fresh_var, condition: var, then_clause: nil, else_clause: assignment, node: node)
+
+          when :send
+            test = normalize_node(lhs)
+            assignment = with_new_block node do
+              receiver = lhs.children[0].try {|r| normalize_node(r) }
+              setter = :"#{lhs.children[1]}="
+              args = normalize_node(rhs)
+
+              push_stmt AST::Stmt::Call.new(dest: fresh_var, receiver: receiver, name: setter, args: [args], block: nil, node: node)
+            end
+
+            push_stmt AST::Stmt::If.new(dest: fresh_var, condition: test, then_clause: nil, else_clause: assignment, node: node)
+
+          else
+            p node
+            raise "#{lhs.type}"
+          end
+
+        when :op_asgn
+          lhs = node.children[0]
+          method = node.children[1]
+          rhs = node.children[2]
+
+          case lhs.type
+          when :lvasgn, :ivasgn, :gvasgn, :cvasgn
+            var = translate_var(lhs)
+
+            call_dest = fresh_var
+            push_stmt AST::Stmt::Call.new(dest: call_dest, receiver: var, name: method, args: [normalize_node(rhs)], block: nil, node: node)
+            push_stmt AST::Stmt::Assign.new(dest: fresh_var, lhs: var, rhs: call_dest, node: node)
+
+          when :send
+            updated_value = fresh_var
+
+            old_var = normalize_node(lhs)
+            args = normalize_node(rhs)
+            push_stmt AST::Stmt::Call.new(dest: updated_value, receiver: old_var, name: method, args: [args], block: nil, node: node)
+
+            receiver = lhs.children[0].try {|r| normalize_node(r) }
+            setter = :"#{lhs.children[1]}="
+            push_stmt AST::Stmt::Call.new(dest: fresh_var, receiver: receiver, name: setter, args: [updated_value], block: nil, node: node)
+
+          else
+            p node
+            raise "#{lhs.type}"
+          end
+
+
         else
           if value_node?(node)
             push_stmt AST::Stmt::Value.new(dest: fresh_var, value: node, node: node)
@@ -461,6 +522,8 @@ module Contror
         when :self, :nil
           true
         when :cbase
+          true
+        when :nth_ref, :defined?
           true
         else
           false
