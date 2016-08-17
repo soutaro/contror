@@ -6,6 +6,10 @@ module Contror
           yield self
         end
       end
+
+      def continue
+        yield self
+      end
     end
   end
 end

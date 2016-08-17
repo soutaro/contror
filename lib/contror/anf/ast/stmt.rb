@@ -10,6 +10,9 @@ module Contror
             @dest = dest
             @node = node
           end
+
+          def each_sub_stmt(recursively: false, &block)
+          end
         end
 
         class Block < Base
@@ -18,6 +21,13 @@ module Contror
           def initialize(dest:, stmts:, node:)
             @stmts = stmts
             super(dest: dest, node: node)
+          end
+
+          def each_sub_stmt(recursively: false, &block)
+            stmts.each do |stmt|
+              yield stmt
+              stmt.each_sub_stmt(recursively: recursively, &block) if recursively
+            end
           end
         end
 
@@ -64,6 +74,19 @@ module Contror
             @block = block
             super(dest: dest, node: node)
           end
+
+          def each_sub_stmt(recursively: false, &block)
+            if self.block
+              self.block.params.each do |param|
+                if param[2]
+                  yield param[2]
+                  param[2].each_sub_stmt(recursively: true, &block) if recursively
+                end
+              end
+              yield self.block.body
+              self.block.body.each_sub_stmt(recursively: true, &block) if recursively
+            end
+          end
         end
 
         class If < Base
@@ -77,6 +100,18 @@ module Contror
             @else_clause = else_clause
             super(dest: dest, node: node)
           end
+
+          def each_sub_stmt(recursively: false, &block)
+            if then_clause
+              yield then_clause
+              then_clause.each_sub_stmt(recursively: true, &block) if recursively
+            end
+
+            if else_clause
+              yield else_clause
+              else_clause.each_sub_stmt(recursively: true, &block) if recursively
+            end
+          end
         end
 
         class Loop < Base
@@ -85,6 +120,13 @@ module Contror
           def initialize(dest:, body:, node:)
             @body = body
             super(dest: dest, node: node)
+          end
+
+          def each_sub_stmt(recursively: false, &block)
+            if body
+              yield body
+              body.each_sub_stmt(recursively: true, &block) if recursively
+            end
           end
         end
 
@@ -98,6 +140,13 @@ module Contror
             @collection = collection
             @body = body
             super(dest: dest, node: node)
+          end
+
+          def each_sub_stmt(recursively: false, &block)
+            if body
+              yield body
+              body.each_sub_stmt(recursively: true, &block) if recursively
+            end
           end
         end
 
@@ -235,6 +284,22 @@ module Contror
             @rescues = rescues
             super(dest: dest, node: node)
           end
+
+          def each_sub_stmt(recursively: false, &block)
+            yield body if body
+
+            rescues.each do |r|
+              if r.class_stmt
+                yield r.class_stmt
+                r.class_stmt.each_sub_stmt(recursively: recursively, &block) if recursively
+              end
+
+              if r.body
+                yield r.body
+                r.body.each_sub_stmt(recursively: recursively, &block) if recursively
+              end
+            end
+          end
         end
 
         class Ensure < Base
@@ -245,6 +310,17 @@ module Contror
             @ensured = ensured
             @ensuring = ensuring
             super(dest: dest, node: node)
+          end
+
+          def each_sub_stmt(recursively: false, &block)
+            if ensured
+              yield ensured
+              ensured.each_sub_stmt(recursively: true, &block) if recursively
+            end
+            if ensuring
+              yield ensuring
+              ensuring.each_sub_stmt(recursively: true, &block) if recursively
+            end
           end
         end
 
@@ -259,6 +335,13 @@ module Contror
             @body = body
             super(dest: dest, node: node)
           end
+
+          def each_sub_stmt(recursively: false, &block)
+            if body
+              yield body
+              body.each_sub_stmt(recursively: true, &block) if recursively
+            end
+          end
         end
 
         class Module < Base
@@ -270,6 +353,13 @@ module Contror
             @body = body
             super(dest: dest, node: node)
           end
+
+          def each_sub_stmt(recursively: false, &block)
+            if body
+              yield body
+              body.each_sub_stmt(recursively: true, &block) if recursively
+            end
+          end
         end
 
         class SingletonClass < Base
@@ -280,6 +370,13 @@ module Contror
             @object = object
             @body = body
             super(dest: dest, node: node)
+          end
+
+          def each_sub_stmt(recursively: false, &block)
+            if body
+              yield body
+              body.each_sub_stmt(recursively: true, &block) if recursively
+            end
           end
         end
 
@@ -296,6 +393,20 @@ module Contror
             @body = body
             super(dest: dest, node: node)
           end
+
+          def each_sub_stmt(recursively: false, &block)
+            params.each do |p|
+              if p[2]
+                yield p[2]
+                p[2].each_sub_stmt(recursively: true, &block) if recursively
+              end
+            end
+
+            if body
+              yield body
+              body.each_sub_stmt(recursively: true, &block) if recursively
+            end
+          end
         end
 
         class Lambda < Base
@@ -306,6 +417,20 @@ module Contror
             @params = params
             @body = body
             super(dest: dest, node: node)
+          end
+
+          def each_sub_stmt(recursively: false, &block)
+            params.each do |p|
+              if p[2]
+                yield p[2]
+                p[2].each_sub_stmt(recursively: true, &block) if recursively
+              end
+            end
+
+            if body
+              yield body
+              body.each_sub_stmt(recursively: true, &block) if recursively
+            end
           end
         end
 
@@ -327,6 +452,19 @@ module Contror
             @condition = condition
             @whens = whens
             super(dest: dest, node: node)
+          end
+
+          def each_sub_stmt(recursively: false, &block)
+            whens.each do |w|
+              if w.pattern
+                yield w.pattern
+                w.pattern.each_sub_stmt(recursively: true, &block) if recursively
+              end
+              if w.body
+                yield w.body
+                w.body.each_sub_stmt(recursively: true, &block) if recursively
+              end
+            end
           end
         end
 

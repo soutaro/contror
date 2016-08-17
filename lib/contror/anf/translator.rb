@@ -442,6 +442,9 @@ module Contror
 
           push_stmt AST::Stmt::MatchWithLasgn.new(dest: fresh_var, lhs: lhs, rhs: rhs, node: node)
 
+        when :redo
+          push_stmt AST::Stmt::Jump.new(dest: fresh_var, type: :redo, args: nil, node: node)
+
         else
           if value_node?(node)
             push_stmt AST::Stmt::Value.new(dest: fresh_var, value: node, node: node)

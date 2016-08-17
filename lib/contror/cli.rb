@@ -42,12 +42,53 @@ module Contror
 
       node = Parser::CurrentRuby.parse(path.read, path.to_s)
       anf = ANF::Translator.new.translate(node: node)
-      graph = Graph.new(stmt: anf)
 
-      p graph
+      stmts = [anf]
+
+      anf.each_sub_stmt(recursively: true) do |stmt|
+        case stmt
+        when ANF::AST::Stmt::Def
+          stmts << stmt
+        end
+      end
+
+      puts "digraph a {"
+
+      stmts.each.with_index do |stmt, index|
+        graph = Graph.new(stmt: stmt, type: index == 0 ? :toplevel : :def)
+        graph.each_edge do |edge|
+          src = format_vertex(edge.source, graph: stmt)
+          dest = format_vertex(edge.destination, graph: stmt)
+          puts "\"#{src}\" -> \"#{dest}\" #{edge_option(edge)};"
+        end
+      end
+
+      puts "}"
     end
 
     private
+
+    def format_vertex(v, graph:)
+      case v
+      when Symbol
+        if graph.is_a?(ANF::AST::Stmt::Def)
+          "#{graph.dest.id}@#{graph.name}:#{v}"
+        else
+          "toplevel:#{v}"
+        end
+      when Graph::Vertex
+        stmt = v.stmt
+        "#{stmt.dest.id}@#{stmt.class.name}:#{stmt.node.loc.first_line}:#{stmt.node.loc.column}:#{v.label || "-"}"
+      end
+    end
+
+    def edge_option(edge)
+      if edge.label
+        "[label=\"#{edge.label}\"]"
+      else
+        ""
+      end
+    end
 
     def each_ruby_script(args, &block)
       args.each do |arg|
