@@ -13,9 +13,10 @@ module Contror
 
         begin
           node = Parser::CurrentRuby.parse(path.read, path.to_s)
-          anf = ANF::Translator.new.translate(node: node)
+          anf = ANF::Translator.new.translate(node: node) if node
 
           puts Rainbow("OK").blue
+
         rescue => exn
           puts Rainbow("Failed").red
           p exn
