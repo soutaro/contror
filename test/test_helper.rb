@@ -1,8 +1,10 @@
 $LOAD_PATH.unshift File.expand_path('../../lib', __FILE__)
 require 'contror'
 
-require 'minitest/autorun'
+require_relative 'anf_assertions'
 require "pp"
+
+require 'minitest/autorun'
 
 Parser::Builders::Default.emit_lambda = true
 
