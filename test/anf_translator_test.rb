@@ -763,6 +763,25 @@ class ANFTranslatorTest < Minitest::Test
     end
   end
 
+  def test_translate_regexp
+    translate '/hello#{1}, #{2}/i' do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_value_stmt 1, stmts[0]
+        assert_value_stmt 2, stmts[1]
+
+        regexp = stmts[2]
+        assert_instance_of AST::Stmt::Regexp, regexp
+        assert_equal [:i], regexp.option
+        assert_equal 4, regexp.content.size
+
+        assert_value "hello", regexp.content[0]
+        assert_value stmts[0].dest, regexp.content[1]
+        assert_value ", ", regexp.content[2]
+        assert_value stmts[1].dest, regexp.content[3]
+      end
+    end
+  end
+
   def assert_block_stmt(stmt)
     assert_instance_of AST::Stmt::Block, stmt
     yield stmt.stmts if block_given?

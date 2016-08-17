@@ -310,6 +310,17 @@ module Contror
             super(dest: dest, node: node)
           end
         end
+
+        class Regexp < Base
+          attr_reader :content
+          attr_reader :option
+
+          def initialize(dest:, content:, option:, node:)
+            @content = content
+            @option = option
+            super(dest: dest, node: node)
+          end
+        end
       end
 
       module Variable

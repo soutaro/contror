@@ -342,6 +342,20 @@ module Contror
 
           push_stmt AST::Stmt::Super.new(dest: fresh_var, args: args, node: node)
 
+        when :regexp
+          content = []
+          option = nil
+
+          node.children.each do |child|
+            if child.type == :regopt
+              option = child.children
+            else
+              content << normalize_node(child)
+            end
+          end
+
+          push_stmt AST::Stmt::Regexp.new(dest: fresh_var, content: content, option: option, node: node)
+
         else
           if value_node?(node)
             push_stmt AST::Stmt::Value.new(dest: fresh_var, value: node, node: node)
