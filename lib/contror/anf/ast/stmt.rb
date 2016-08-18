@@ -83,8 +83,10 @@ module Contror
                   param[2].each_sub_stmt(recursively: true, &block) if recursively
                 end
               end
-              yield self.block.body
-              self.block.body.each_sub_stmt(recursively: true, &block) if recursively
+              if self.block.body
+                yield self.block.body
+                self.block.body.each_sub_stmt(recursively: true, &block) if recursively
+              end
             end
           end
         end
