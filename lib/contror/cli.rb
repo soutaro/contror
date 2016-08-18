@@ -43,22 +43,14 @@ module Contror
       node = Parser::CurrentRuby.parse(path.read, path.to_s)
       anf = ANF::Translator.new.translate(node: node)
 
-      stmts = [anf]
-
-      anf.each_sub_stmt(recursively: true) do |stmt|
-        case stmt
-        when ANF::AST::Stmt::Def
-          stmts << stmt
-        end
-      end
+      builder = Graph::Builder.new(stmt: anf)
 
       puts "digraph a {"
 
-      stmts.each.with_index do |stmt, index|
-        graph = Graph.new(stmt: stmt, type: index == 0 ? :toplevel : :def)
+      builder.each_graph do |graph|
         graph.each_edge do |edge|
-          src = format_vertex(edge.source, graph: stmt)
-          dest = format_vertex(edge.destination, graph: stmt)
+          src = format_vertex(edge.source, graph: graph)
+          dest = format_vertex(edge.destination, graph: graph)
           puts "\"#{src}\" -> \"#{dest}\" #{edge_option(edge)};"
         end
       end
@@ -71,8 +63,8 @@ module Contror
     def format_vertex(v, graph:)
       case v
       when Symbol
-        if graph.is_a?(ANF::AST::Stmt::Def)
-          "#{graph.dest.id}@#{graph.name}:#{v}"
+        if graph.stmt.is_a?(ANF::AST::Stmt::Def)
+          "#{graph.stmt.dest.id}@#{graph.stmt.name}:#{v}"
         else
           "toplevel:#{v}"
         end
