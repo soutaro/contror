@@ -445,6 +445,11 @@ module Contror
         when :redo
           push_stmt AST::Stmt::Jump.new(dest: fresh_var, type: :redo, args: nil, node: node)
 
+        when :splat
+          var = normalize_node node.children[0]
+          splat_var = AST::Variable::Splat.new(var: var)
+          push_stmt AST::Stmt::Value.new(dest: fresh_var, value: splat_var, node: node)
+
         else
           if value_node?(node)
             push_stmt AST::Stmt::Value.new(dest: fresh_var, value: node, node: node)

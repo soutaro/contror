@@ -737,4 +737,22 @@ class ANFTranslatorTest < Minitest::Test
     end
   end
 
+  def test_case_when_splat
+    translate <<-EOS do |ast|
+      case 1
+      when *[1,2,3]
+        4
+      end
+    EOS
+      assert_instance_of AST::Stmt::Case, ast
+
+      assert_block_stmt ast.whens[0].pattern do |stmts|
+        assert_array_stmt stmts[0], elements: [1,2,3]
+        assert_value_stmt AST::Variable::Splat.new(var: stmts[0].dest), stmts[1]
+      end
+
+      assert_value_stmt 4, ast.whens[0].body
+    end
+  end
+
 end
