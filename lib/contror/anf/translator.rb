@@ -377,7 +377,7 @@ module Contror
 
           push_stmt AST::Stmt::Range.new(dest: fresh_var, beginv: beginv, endv: endv, type: type, node: node)
 
-        when :or_asgn
+        when :or_asgn, :and_asgn
           lhs = node.children[0]
           rhs = node.children[1]
 
@@ -389,7 +389,14 @@ module Contror
               push_stmt AST::Stmt::Assign.new(dest: fresh_var, lhs: var, rhs: rhs_var, node: node)
             end
 
-            push_stmt AST::Stmt::If.new(dest: fresh_var, condition: var, then_clause: nil, else_clause: assignment, node: node)
+            then_clause, else_clause = case node.type
+                                       when :or_asgn
+                                         [nil, assignment]
+                                       when :and_asgn
+                                         [assignment, nil]
+                                       end
+
+            push_stmt AST::Stmt::If.new(dest: fresh_var, condition: var, then_clause: then_clause, else_clause: else_clause, node: node)
 
           when :send
             test = normalize_node(lhs)
@@ -401,7 +408,14 @@ module Contror
               push_stmt AST::Stmt::Call.new(dest: fresh_var, receiver: receiver, name: setter, args: [args], block: nil, node: node)
             end
 
-            push_stmt AST::Stmt::If.new(dest: fresh_var, condition: test, then_clause: nil, else_clause: assignment, node: node)
+            then_clause, else_clause = case node.type
+                                       when :or_asgn
+                                         [nil, assignment]
+                                       when :and_asgn
+                                         [assignment, nil]
+                                       end
+
+            push_stmt AST::Stmt::If.new(dest: fresh_var, condition: test, then_clause: then_clause, else_clause: else_clause, node: node)
 
           else
             p node

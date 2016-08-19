@@ -683,6 +683,25 @@ class ANFTranslatorTest < Minitest::Test
     end
   end
 
+  def test_translate_and_asgn
+    translate "a &&= 3" do |ast|
+      assert_if_stmt ast, condition: AST::Variable::Local.new(name: :a) do |t, f|
+        assert_assign_stmt t, lhs: AST::Variable::Local.new(name: :a), rhs: 3
+        assert_nil f
+      end
+    end
+
+    translate "1.b &&= 3" do |ast|
+      assert_block_stmt ast do |stmts|
+        assert_call_stmt stmts[0], receiver: 1, name: :b, args: []
+        assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
+          assert_call_stmt t, receiver: 1, name: :b=, args: [3]
+          assert_nil f
+        end
+      end
+    end
+  end
+
   def test_translate_opasgn
     translate "x += 1" do |ast|
       assert_block_stmt ast do |stmts|
