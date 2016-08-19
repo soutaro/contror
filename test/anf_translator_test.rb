@@ -485,6 +485,17 @@ class ANFTranslatorTest < Minitest::Test
         assert_equal AST::Variable::Splat.new(var: AST::Variable::Local.new(name: :b)), stmts[1].vars[1]
       end
     end
+
+    translate "*, rhs = []" do |ast, node|
+      assert_block_stmt ast do |stmts|
+        assert_array_stmt stmts[0]
+
+        assert_instance_of AST::Stmt::MAssign, stmts[1]
+        assert_value stmts[0].dest, stmts[1].rhs
+        assert_equal AST::Variable::Splat.new(var: nil), stmts[1].vars[0]
+        assert_equal AST::Variable::Local.new(name: :rhs), stmts[1].vars[1]
+      end
+    end
   end
 
   def test_translate_rescue
@@ -754,5 +765,4 @@ class ANFTranslatorTest < Minitest::Test
       assert_value_stmt 4, ast.whens[0].body
     end
   end
-
 end

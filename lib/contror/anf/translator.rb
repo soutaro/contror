@@ -292,7 +292,8 @@ module Contror
           vars = []
           node.children[0].children.each do |asgn|
             if asgn.type == :splat
-              vars << AST::Variable::Splat.new(var: translate_var(asgn.children.first))
+              v = asgn.children.first.try {|v| translate_var(v) }
+              vars << AST::Variable::Splat.new(var: v)
             else
               vars << translate_var(asgn)
             end

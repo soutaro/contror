@@ -98,7 +98,7 @@ module ANFAssertions
     end
   end
 
-  def assert_array_stmt(stmt, elements:)
+  def assert_array_stmt(stmt, elements: nil)
     assert_instance_of AST::Stmt::Array, stmt
 
     if elements
