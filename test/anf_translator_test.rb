@@ -73,7 +73,8 @@ class ANFTranslatorTest < Minitest::Test
 
   def test_translate_csend
     translate("1&.f") do |ast|
-      assert_if_stmt ast, condition: 1 do |t, f|
+      assert_if_stmt ast do |c, t, f|
+        assert_value_stmt 1, c
         assert_call_stmt t, receiver: 1, name: :f, args: []
         assert_nil f
       end
@@ -82,38 +83,33 @@ class ANFTranslatorTest < Minitest::Test
 
   def test_translate_if
     translate("if x() then y() else z() end") do |ast|
-      assert_block_stmt ast do |stmts|
-        assert_call_stmt stmts[0], receiver: nil, name: :x, args: []
-        assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
-          assert_call_stmt t, receiver: nil, name: :y, args: []
-          assert_call_stmt f, receiver: nil, name: :z, args: []
-        end
+      assert_if_stmt ast do |c, t, f|
+        assert_call_stmt c, receiver: nil, name: :x, args: []
+        assert_call_stmt t, receiver: nil, name: :y, args: []
+        assert_call_stmt f, receiver: nil, name: :z, args: []
       end
     end
 
     translate("if x() then y() end") do |ast|
-      assert_block_stmt ast do |stmts|
-        assert_call_stmt stmts[0], receiver: nil, name: :x, args: []
-        assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
-          assert_call_stmt t, receiver: nil, name: :y, args: []
-          assert_nil f
-        end
+      assert_if_stmt ast do |c, t, f|
+        assert_call_stmt c, receiver: nil, name: :x, args: []
+        assert_call_stmt t, receiver: nil, name: :y, args: []
+        assert_nil f
       end
     end
 
     translate("unless x() then y() end") do |ast|
-      assert_block_stmt ast do |stmts|
-        assert_call_stmt stmts[0], receiver: nil, name: :x, args: []
-        assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
-          assert_nil t
-          assert_call_stmt f, receiver: nil, name: :y, args: []
-        end
+      assert_if_stmt ast do |c, t, f|
+        assert_call_stmt c, receiver: nil, name: :x, args: []
+        assert_nil t
+        assert_call_stmt f, receiver: nil, name: :y, args: []
       end
     end
 
     translate("x = 1 ? 2 : 3") do |ast|
       assert_block_stmt ast do |stmts|
-        assert_if_stmt stmts[0], condition: 1 do |t, f|
+        assert_if_stmt stmts[0] do |c, t, f|
+          assert_value_stmt 1, c
           assert_value_stmt 2, t
           assert_value_stmt 3, f
         end
@@ -130,11 +126,12 @@ class ANFTranslatorTest < Minitest::Test
     EOS
       assert_loop_stmt ast do |body|
         assert_block_stmt body do |stmts|
-          assert_call_stmt stmts[0], receiver: nil, name: :f, args: []
-          assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
+          assert_if_stmt stmts[0] do |c, t, f|
+            assert_call_stmt c, receiver: nil, name: :f, args: []
             assert_nil t
             assert_jump_stmt f, type: :break, args: []
           end
+          assert_call_stmt stmts[1], receiver: nil, name: :g, args: []
         end
       end
     end
@@ -146,8 +143,8 @@ class ANFTranslatorTest < Minitest::Test
     EOS
       assert_loop_stmt ast do |body|
         assert_block_stmt body do |stmts|
-          assert_call_stmt stmts[0], receiver: nil, name: :f, args: []
-          assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
+          assert_if_stmt stmts[0] do |c, t, f|
+            assert_call_stmt c, receiver: nil, name: :f, args: []
             assert_jump_stmt t, type: :break, args: []
             assert_nil f
           end
@@ -160,10 +157,7 @@ class ANFTranslatorTest < Minitest::Test
       end
     EOS
       assert_block_stmt ast do |stmts|
-        assert_loop_stmt stmts[0] do |body|
-          assert_block_stmt body
-        end
-
+        assert_loop_stmt stmts[0]
         assert_assign_stmt stmts[1], lhs: AST::Variable::Local.new(name: :x), rhs: stmts[0].dest
       end
     end
@@ -458,7 +452,8 @@ class ANFTranslatorTest < Minitest::Test
 
   def test_translate_and
     translate "1 && self" do |ast|
-      assert_if_stmt ast, condition: 1 do |t, f|
+      assert_if_stmt ast do |c, t, f|
+        assert_value_stmt 1, c
         assert_value_stmt :self, t
         assert_nil f
       end
@@ -467,7 +462,8 @@ class ANFTranslatorTest < Minitest::Test
 
   def test_translate_or
     translate "1 || 2" do |ast|
-      assert_if_stmt ast, condition: 1 do |t, f|
+      assert_if_stmt ast do |c, t, f|
+        assert_value_stmt 1, c
         assert_nil t
         assert_value_stmt 2, f
       end
@@ -666,38 +662,36 @@ class ANFTranslatorTest < Minitest::Test
 
   def test_translate_or_asgn
     translate "a ||= 3" do |ast|
-      assert_if_stmt ast, condition: AST::Variable::Local.new(name: :a) do |t, f|
+      assert_if_stmt ast do |c, t, f|
+        assert_value_stmt AST::Variable::Local.new(name: :a), c
         assert_nil t
         assert_assign_stmt f, lhs: AST::Variable::Local.new(name: :a), rhs: 3
       end
     end
 
     translate "1.b ||= 3" do |ast|
-      assert_block_stmt ast do |stmts|
-        assert_call_stmt stmts[0], receiver: 1, name: :b, args: []
-        assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
-          assert_nil t
-          assert_call_stmt f, receiver: 1, name: :b=, args: [3]
-        end
+      assert_if_stmt ast do |c, t, f|
+        assert_call_stmt c, receiver: 1, name: :b, args: []
+        assert_nil t
+        assert_call_stmt f, receiver: 1, name: :b=, args: [3]
       end
     end
   end
 
   def test_translate_and_asgn
     translate "a &&= 3" do |ast|
-      assert_if_stmt ast, condition: AST::Variable::Local.new(name: :a) do |t, f|
+      assert_if_stmt ast do |c, t, f|
+        assert_value_stmt AST::Variable::Local.new(name: :a), c
         assert_assign_stmt t, lhs: AST::Variable::Local.new(name: :a), rhs: 3
         assert_nil f
       end
     end
 
     translate "1.b &&= 3" do |ast|
-      assert_block_stmt ast do |stmts|
-        assert_call_stmt stmts[0], receiver: 1, name: :b, args: []
-        assert_if_stmt stmts[1], condition: stmts[0].dest do |t, f|
-          assert_call_stmt t, receiver: 1, name: :b=, args: [3]
-          assert_nil f
-        end
+      assert_if_stmt ast do |c, t, f|
+        assert_call_stmt c, receiver: 1, name: :b, args: []
+        assert_call_stmt t, receiver: 1, name: :b=, args: [3]
+        assert_nil f
       end
     end
   end

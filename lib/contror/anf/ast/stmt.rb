@@ -104,6 +104,9 @@ module Contror
           end
 
           def each_sub_stmt(recursively: false, &block)
+            yield condition
+            condition.each_sub_stmt(recursively: true, &block) if recursively
+
             if then_clause
               yield then_clause
               then_clause.each_sub_stmt(recursively: true, &block) if recursively

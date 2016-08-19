@@ -73,10 +73,9 @@ module ANFAssertions
     yield stmt.block if block_given?
   end
 
-  def assert_if_stmt(stmt, condition:)
+  def assert_if_stmt(stmt)
     assert_instance_of AST::Stmt::If, stmt
-    assert_value condition, stmt.condition
-    yield stmt.then_clause, stmt.else_clause if block_given?
+    yield(stmt.condition, stmt.then_clause, stmt.else_clause) if block_given?
   end
 
   def assert_loop_stmt(ast)

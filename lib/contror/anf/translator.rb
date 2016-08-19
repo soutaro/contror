@@ -68,9 +68,9 @@ module Contror
           push_stmt block
 
         when :if
-          condition = normalize_node(node.children[0])
-          then_clause = node.children[1].try {|child| with_new_block(child) { translate0(child) } }
-          else_clause = node.children[2].try {|child| with_new_block(child) { translate0(child) } }
+          condition = translate(node: node.children[0])
+          then_clause = node.children[1].try {|child| translate(node: child) }
+          else_clause = node.children[2].try {|child| translate(node: child) }
 
           push_stmt AST::Stmt::If.new(dest: fresh_var,
                                       condition: condition,
@@ -133,7 +133,7 @@ module Contror
 
         when :while
           loop = with_new_block node do
-            cond = normalize_node(node.children[0])
+            cond = translate(node: node.children[0])
 
             break_stmt = AST::Stmt::Jump.new(dest: fresh_var, type: :break, args: [], node: nil)
 
@@ -150,7 +150,7 @@ module Contror
 
         when :until
           loop = with_new_block node do
-            cond = normalize_node(node.children[0])
+            cond = translate(node: node.children[0])
 
             break_stmt = AST::Stmt::Jump.new(dest: fresh_var, type: :break, args: [], node: nil)
 
@@ -277,13 +277,13 @@ module Contror
           push_stmt AST::Stmt::Def.new(dest: fresh_var, object: object, name: name, params: params, body: body, node: node)
 
         when :and
-          lhs = normalize_node(node.children[0])
+          lhs = translate(node: node.children[0])
           rhs = translate(node: node.children[1])
 
           push_stmt AST::Stmt::If.new(dest: fresh_var, condition: lhs, then_clause: rhs, else_clause: nil, node: node)
 
         when :or
-          lhs = normalize_node(node.children[0])
+          lhs = translate(node: node.children[0])
           rhs = translate(node: node.children[1])
 
           push_stmt AST::Stmt::If.new(dest: fresh_var, condition: lhs, then_clause: nil, else_clause: rhs, node: node)
@@ -384,6 +384,9 @@ module Contror
           case lhs.type
           when :lvasgn, :ivasgn, :gvasgn, :cvasgn
             var = translate_var(lhs)
+            condition = with_new_block node do
+              push_stmt AST::Stmt::Value.new(dest: fresh_var, value: var, node: node)
+            end
             assignment = with_new_block node do
               rhs_var = normalize_node(rhs)
               push_stmt AST::Stmt::Assign.new(dest: fresh_var, lhs: var, rhs: rhs_var, node: node)
@@ -396,10 +399,14 @@ module Contror
                                          [assignment, nil]
                                        end
 
-            push_stmt AST::Stmt::If.new(dest: fresh_var, condition: var, then_clause: then_clause, else_clause: else_clause, node: node)
+            push_stmt AST::Stmt::If.new(dest: fresh_var,
+                                        condition: condition,
+                                        then_clause: then_clause,
+                                        else_clause: else_clause,
+                                        node: node)
 
           when :send
-            test = normalize_node(lhs)
+            condition = translate(node: lhs)
             assignment = with_new_block node do
               receiver = lhs.children[0].try {|r| normalize_node(r) }
               setter = :"#{lhs.children[1]}="
@@ -415,7 +422,11 @@ module Contror
                                          [assignment, nil]
                                        end
 
-            push_stmt AST::Stmt::If.new(dest: fresh_var, condition: test, then_clause: then_clause, else_clause: else_clause, node: node)
+            push_stmt AST::Stmt::If.new(dest: fresh_var,
+                                        condition: condition,
+                                        then_clause: then_clause,
+                                        else_clause: else_clause,
+                                        node: node)
 
           else
             p node
@@ -489,7 +500,8 @@ module Contror
       end
 
       def translate_call(node, block:)
-        receiver = node.children[0].try {|recv| normalize_node(recv) }
+        receiver_node = node.children[0]
+        receiver = receiver_node.try {|recv| normalize_node(recv) }
         name = node.children[1]
 
         case node.type
@@ -520,10 +532,9 @@ module Contror
                                           node: node)
           end
 
-
-
+          condition = AST::Stmt::Value.new(dest: fresh_var, value: receiver, node: receiver_node)
           push_stmt AST::Stmt::If.new(dest: fresh_var,
-                                      condition: receiver,
+                                      condition: condition,
                                       then_clause: then_block,
                                       else_clause: nil,
                                       node: node)
