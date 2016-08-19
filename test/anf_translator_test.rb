@@ -765,4 +765,10 @@ class ANFTranslatorTest < Minitest::Test
       assert_value_stmt 4, ast.whens[0].body
     end
   end
+
+  def test_backref
+    translate "a = $&" do |ast|
+      assert_assign_stmt ast, lhs: AST::Variable::Local.new(name: :a), rhs: :back_ref
+    end
+  end
 end

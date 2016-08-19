@@ -542,7 +542,7 @@ module Contror
           true
         when :cbase
           true
-        when :nth_ref, :defined?, :alias
+        when :nth_ref, :defined?, :alias, :back_ref
           true
         else
           false
