@@ -550,7 +550,7 @@ class ANFTranslatorTest < Minitest::Test
     EOS
       assert_instance_of AST::Stmt::Case, ast
 
-      assert_value 1, ast.condition
+      assert_value_stmt 1, ast.condition
 
       assert_equal 2, ast.whens.count
 

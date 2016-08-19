@@ -329,7 +329,7 @@ module Contror
           push_stmt AST::Stmt::Ensure.new(dest: fresh_var, ensured: ensured, ensuring: ensuring, node: node)
 
         when :case
-          condition = node.children[0].try {|cond_node| normalize_node(cond_node) }
+          condition = node.children[0].try {|cond_node| translate(node: cond_node) }
 
           whens = []
           node.children.drop(1).compact.each do |when_node|

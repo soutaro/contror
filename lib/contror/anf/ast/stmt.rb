@@ -463,6 +463,11 @@ module Contror
           end
 
           def each_sub_stmt(recursively: false, &block)
+            if condition
+              yield condition
+              condition.each_sub_stmt(recursively: true, &block) if recursively
+            end
+
             whens.each do |w|
               if w.pattern
                 yield w.pattern
