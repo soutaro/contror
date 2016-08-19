@@ -126,7 +126,7 @@ module Contror
 
         when :for
           var = translate_var(node.children[0])
-          collection = normalize_node(node.children[1])
+          collection = translate(node: node.children[1])
           body = node.children[2].try {|body_node| translate(node: body_node) }
 
           push_stmt AST::Stmt::For.new(dest: fresh_var, var: var, collection: collection, body: body, node: node)

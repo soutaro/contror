@@ -148,6 +148,9 @@ module Contror
           end
 
           def each_sub_stmt(recursively: false, &block)
+            yield collection
+            collection.each_sub_stmt(recursively: true, &block) if recursively
+
             if body
               yield body
               body.each_sub_stmt(recursively: true, &block) if recursively

@@ -750,14 +750,10 @@ class ANFTranslatorTest < Minitest::Test
       end
     EOS
 
-      assert_block_stmt ast do |stmts|
-        assert_call_stmt stmts[0], receiver: nil, name: :abc, args: []
-
-        assert_instance_of AST::Stmt::For, stmts[1]
-        assert_value AST::Variable::Local.new(name: :x), stmts[1].var
-        assert_value stmts[0].dest, stmts[1].collection
-        assert_call_stmt stmts[1].body, receiver: AST::Variable::Local.new(name: :x), name: :+, args: [1]
-      end
+      assert_instance_of AST::Stmt::For, ast
+      assert_value AST::Variable::Local.new(name: :x), ast.var
+      assert_call_stmt ast.collection, receiver: nil, name: :abc, args: []
+      assert_call_stmt ast.body, receiver: AST::Variable::Local.new(name: :x), name: :+, args: [1]
     end
   end
 
