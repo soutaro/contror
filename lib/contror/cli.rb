@@ -70,7 +70,8 @@ module Contror
         end
       when Graph::Vertex
         stmt = v.stmt
-        "#{stmt.dest.id}@#{stmt.class.name}:#{stmt.node.loc.first_line}:#{stmt.node.loc.column}:#{v.label || "-"}"
+        loc = stmt.node&.loc
+        "#{stmt.dest.id}@#{stmt.class.name}:#{loc&.first_line || "-"}:#{loc&.column || "-"}:#{v.label || "-"}"
       end
     end
 
