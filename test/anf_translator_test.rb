@@ -780,4 +780,10 @@ class ANFTranslatorTest < Minitest::Test
       assert_assign_stmt ast, lhs: AST::Variable::Local.new(name: :a), rhs: :back_ref
     end
   end
+
+  def test_translate_redo
+    translate "1.tap do redo end" do |ast|
+
+    end
+  end
 end

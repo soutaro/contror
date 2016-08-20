@@ -220,7 +220,7 @@ module Contror
           rhs = normalize_node(node.children[1])
           push_stmt AST::Stmt::Assign.new(dest: fresh_var, lhs: lhs_var, rhs: rhs, node: node)
 
-        when :retry, :next
+        when :retry, :next, :redo
           push_stmt AST::Stmt::Jump.new(dest: fresh_var, type: node.type, args: nil, node: node)
 
         when :break, :return
@@ -467,9 +467,6 @@ module Contror
           rhs = normalize_node node.children[1]
 
           push_stmt AST::Stmt::MatchWithLasgn.new(dest: fresh_var, lhs: lhs, rhs: rhs, node: node)
-
-        when :redo
-          push_stmt AST::Stmt::Jump.new(dest: fresh_var, type: :redo, args: nil, node: node)
 
         when :splat
           var = normalize_node node.children[0]

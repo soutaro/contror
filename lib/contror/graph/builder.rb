@@ -8,6 +8,7 @@ module Contror
       attr_reader :return_destinations
       attr_reader :next_destinations
       attr_reader :retry_destinations
+      attr_reader :redo_destinations
 
       def initialize(stmt:)
         @stmt = stmt
@@ -15,6 +16,7 @@ module Contror
         @return_destinations = []
         @retry_destinations = []
         @next_destinations = []
+        @redo_destinations = []
       end
 
       def each_graph(&block)
@@ -125,6 +127,17 @@ module Contror
         retry_destinations.pop
       end
 
+      def redo_destination
+        redo_destinations.last
+      end
+
+      def push_redo_destination(vertex)
+        redo_destinations.push vertex
+        yield
+      ensure
+        redo_destinations.pop
+      end
+
       def build(graph, stmt, to:)
         case stmt
         when ANF::AST::Stmt::Block
@@ -190,18 +203,22 @@ module Contror
 
         when ANF::AST::Stmt::Call
           if stmt&.block&.body
-            graph.add_edge source: stmt, destination: stmt.block.body, label: :block_yield
-
+            block_start = Vertex.new(stmt: stmt, label: :block_start)
+            block_end = Vertex.new(stmt: stmt, label: :block_end)
             block_exit = Vertex.new(stmt: stmt, label: :call_exit)
 
+            graph.add_edge source: stmt, destination: block_start, label: :block_yield
+            graph.add_edge source: block_start, destination: stmt.block.body
+
             push_break_destination block_exit do
-              push_next_destination block_exit do
-                push_retry_destination stmt.block.body do
-                  build graph, stmt.block.body, to: block_exit
+              push_next_destination block_end do
+                push_redo_destination block_start do
+                  build graph, stmt.block.body, to: block_end
                 end
               end
             end
 
+            graph.add_edge source: block_end, destination: block_exit
             graph.add_edge source: block_exit, destination: to
 
           else
@@ -264,7 +281,9 @@ module Contror
             graph.add_edge source: loop_start, destination: stmt.body
             push_break_destination loop_exit do
               push_next_destination loop_end do
-                build graph, stmt.body, to: loop_end
+                push_redo_destination loop_start do
+                  build graph, stmt.body, to: loop_end
+                end
               end
             end
           else
@@ -286,7 +305,9 @@ module Contror
             graph.add_edge source: loop_start, destination: stmt.body
             push_break_destination loop_exit do
               push_next_destination loop_end do
-                build graph, stmt.body, to: loop_end
+                push_redo_destination loop_start do
+                  build graph, stmt.body, to: loop_end
+                end
               end
             end
           else
@@ -303,8 +324,12 @@ module Contror
             graph.add_edge source: stmt, destination: break_destination
           when :return
             graph.add_edge source: stmt, destination: return_destination
+          when :redo
+            graph.add_edge source: stmt, destination: redo_destination
+          when :retry
+            graph.add_edge source: stmt, destination: retry_destination
           else
-            graph.add_edge source: stmt, destination: to
+            raise "Unknown jump type: #{stmt.type}"
           end
 
         else
