@@ -227,27 +227,32 @@ module Contror
 
         when ANF::AST::Stmt::Rescue
           if stmt.body
-            graph.add_edge source: stmt, destination: stmt.body, label: :begin
+            begin_start = Vertex.new(stmt: stmt, label: :begin_start)
+
+            graph.add_edge source: stmt, destination: begin_start, label: :begin
+            graph.add_edge source: begin_start, destination: stmt.body
             build graph, stmt.body, to: to
 
-            source_vertex = Vertex.new(stmt: stmt.body)
-            for res in stmt.rescues
-              if res.class_stmt
-                graph.add_edge source: source_vertex, destination: res.class_stmt
-                if res.body
-                  build graph, res.class_stmt, to: res.body
-                  build graph, res.body, to: to
-                else
-                  build graph, res.class_stmt, to: to
-                end
+            push_retry_destination begin_start do
+              source_vertex = Vertex.new(stmt: stmt.body)
+              for res in stmt.rescues
+                if res.class_stmt
+                  graph.add_edge source: source_vertex, destination: res.class_stmt
+                  if res.body
+                    build graph, res.class_stmt, to: res.body
+                    build graph, res.body, to: to
+                  else
+                    build graph, res.class_stmt, to: to
+                  end
 
-                source_vertex = Vertex.new(stmt: res.class_stmt)
-              else
-                if res.body
-                  graph.add_edge source: source_vertex, destination: res.body
-                  build graph, res.body, to: to
+                  source_vertex = Vertex.new(stmt: res.class_stmt)
                 else
-                  graph.add_edge source: source_vertex, destination: to
+                  if res.body
+                    graph.add_edge source: source_vertex, destination: res.body
+                    build graph, res.body, to: to
+                  else
+                    graph.add_edge source: source_vertex, destination: to
+                  end
                 end
               end
             end
