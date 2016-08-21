@@ -160,27 +160,31 @@ module Contror
           build(graph, stmt.body, to: to)
 
         when ANF::AST::Stmt::If
-          loop_exit = Vertex.new(stmt: stmt, label: :exit)
-          cond_vertex = Vertex.new(stmt: stmt, label: :cond)
+          if_cond_end = Vertex.new(stmt: stmt, label: :if_cond_end)
+          if_then = Vertex.new(stmt: stmt, label: :if_then)
+          if_else = Vertex.new(stmt: stmt, label: :if_else)
+          if_end = Vertex.new(stmt: stmt, label: :if_end)
 
-          graph.add_edge source: stmt, destination: stmt.condition, label: :cond
-          build graph, stmt.condition, to: cond_vertex
+          graph.add_edge source: stmt, destination: stmt.condition
+          build graph, stmt.condition, to: if_cond_end
 
+          graph.add_edge source: if_cond_end, destination: if_then
           if stmt.then_clause
-            graph.add_edge source: cond_vertex, destination: stmt.then_clause, label: :then
-            build graph, stmt.then_clause, to: loop_exit
+            graph.add_edge source: if_then, destination: stmt.then_clause
+            build graph, stmt.then_clause, to: if_end
           else
-            graph.add_edge source: cond_vertex, destination: loop_exit, label: :then
+            graph.add_edge source: if_then, destination: if_end
           end
 
+          graph.add_edge source: if_cond_end, destination: if_else
           if stmt.else_clause
-            graph.add_edge source: cond_vertex, destination: stmt.else_clause, label: :else
-            build graph, stmt.else_clause, to: loop_exit
+            graph.add_edge source: if_else, destination: stmt.else_clause
+            build graph, stmt.else_clause, to: if_end
           else
-            graph.add_edge source: cond_vertex, destination: loop_exit, label: :else
+            graph.add_edge source: if_else, destination: if_end
           end
 
-          graph.add_edge source: loop_exit, destination: to
+          graph.add_edge source: if_end, destination: to
 
         when ANF::AST::Stmt::Case
           vertex = stmt
