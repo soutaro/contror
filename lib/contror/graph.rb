@@ -65,6 +65,10 @@ module Contror
       edges.each &block
     end
 
+    def each_vertex(&block)
+      vertexes.each &block
+    end
+
     def add_edge(source:, destination:, label: nil)
       if source.is_a?(ANF::AST::Stmt::Base)
         source = Vertex.new(stmt: source)

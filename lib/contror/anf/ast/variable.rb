@@ -6,10 +6,6 @@ module Contror
           def eql?(other)
             self == other
           end
-
-          def to_s
-            inspect
-          end
         end
 
         module NamedVariable
@@ -21,7 +17,7 @@ module Contror
             self.class.hash ^ name.hash
           end
 
-          def inspect
+          def to_s
             name
           end
         end
@@ -86,7 +82,7 @@ module Contror
             self.class.hash ^ var.hash
           end
 
-          def inspect
+          def to_s
             "&" + var.inspect
           end
         end
@@ -107,7 +103,7 @@ module Contror
             self.class.hash ^ var.hash
           end
 
-          def inspect
+          def to_s
             "*" + var.inspect
           end
         end
@@ -128,7 +124,7 @@ module Contror
             self.class.hash ^ id.hash
           end
 
-          def inspect
+          def to_s
             "[#{id}]"
           end
         end

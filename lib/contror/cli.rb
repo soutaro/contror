@@ -3,6 +3,8 @@ require "pathname"
 require "rainbow"
 require "pp"
 
+require 'contror/dot_helper'
+
 module Contror
   class CLI < Thor
     desc "parse PATH...", "Parse ruby files given as path"
@@ -44,14 +46,19 @@ module Contror
       anf = ANF::Translator.new.translate(node: node)
 
       builder = Graph::Builder.new(stmt: anf)
-
       puts "digraph a {"
 
       builder.each_graph do |graph|
+        helper = DotHelper.new(graph: graph)
+
+        graph.each_vertex do |vertex|
+          puts helper.vertex_decl(vertex);
+        end
+
         graph.each_edge do |edge|
-          src = format_vertex(edge.source, graph: graph)
-          dest = format_vertex(edge.destination, graph: graph)
-          puts "\"#{src}\" -> \"#{dest}\" #{edge_option(edge)};"
+          src = helper.vertex_id(edge.source)
+          dest = helper.vertex_id(edge.destination)
+          puts "#{src} -> #{dest}#{helper.edge_option(edge)};"
         end
       end
 
@@ -59,29 +66,6 @@ module Contror
     end
 
     private
-
-    def format_vertex(v, graph:)
-      case v
-      when Symbol
-        if graph.stmt.is_a?(ANF::AST::Stmt::Def)
-          "#{graph.stmt.dest.id}@#{graph.stmt.name}:#{v}"
-        else
-          "toplevel:#{v}"
-        end
-      when Graph::Vertex
-        stmt = v.stmt
-        loc = stmt.node&.loc
-        "#{stmt.dest.id}@#{stmt.class.name}:#{loc&.first_line || "-"}:#{loc&.column || "-"}:#{v.label || "-"}"
-      end
-    end
-
-    def edge_option(edge)
-      if edge.label
-        "[label=\"#{edge.label}\"]"
-      else
-        ""
-      end
-    end
 
     def each_ruby_script(args, &block)
       args.each do |arg|
