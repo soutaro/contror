@@ -211,7 +211,7 @@ module Contror
             block_end = Vertex.new(stmt: stmt, label: :block_end)
             block_exit = Vertex.new(stmt: stmt, label: :call_exit)
 
-            graph.add_edge source: stmt, destination: block_start, label: :block_yield
+            graph.add_edge source: stmt, destination: block_start
             graph.add_edge source: block_start, destination: stmt.block.body
 
             push_break_destination block_exit do
@@ -224,7 +224,6 @@ module Contror
 
             graph.add_edge source: block_end, destination: block_exit
             graph.add_edge source: block_exit, destination: to
-
           else
             graph.add_edge source: stmt, destination: to
           end
@@ -265,18 +264,24 @@ module Contror
           end
 
         when ANF::AST::Stmt::Ensure
+          ensuring = Vertex.new(stmt: stmt, label: :ensuring)
+          ensure_end = Vertex.new(stmt: stmt, label: :end)
+
           if stmt.ensured
             graph.add_edge source: stmt, destination: stmt.ensured
-            if stmt.ensuring
-              build graph, stmt.ensured, to: stmt.ensuring
-              build graph, stmt.ensuring, to: to
-            else
-              build graph, stmt.ensured, to: to
-            end
+            build graph, stmt.ensured, to: ensuring
           else
-            graph.add_edge source: stmt, destination: stmt.ensuring, label: :ensure
-            build graph, stmt.ensuring, to: to
+            graph.add_edge source: stmt, destination: ensuring
           end
+
+          if stmt.ensuring
+            graph.add_edge source: ensuring, destination: stmt.ensuring
+            build graph, stmt.ensuring, to: ensure_end
+          else
+            graph.add_edge source: ensuring, destination: ensure_end
+          end
+
+          graph.add_edge source: ensure_end, destination: to
 
         when ANF::AST::Stmt::For
           loop_start = Vertex.new(stmt: stmt, label: :for_start)
