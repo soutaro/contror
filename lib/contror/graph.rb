@@ -24,25 +24,29 @@ module Contror
       end
     end
 
-    class Vertex
-      attr_reader :stmt
-      attr_reader :label
+    module Vertex
+      class Base; end
 
-      def initialize(stmt:, label: nil)
-        @stmt = stmt
-        @label = label
-      end
+      class Stmt < Base
+        attr_reader :stmt
+        attr_reader :label
 
-      def eql?(other)
-        self == other
-      end
+        def initialize(stmt:, label: nil)
+          @stmt = stmt
+          @label = label
+        end
 
-      def ==(other)
-        other.is_a?(self.class) && stmt == other.stmt && label == other.label
-      end
+        def eql?(other)
+          self == other
+        end
 
-      def hash
-        self.class.hash ^ label.hash ^ stmt.hash
+        def ==(other)
+          other.is_a?(self.class) && stmt == other.stmt && label == other.label
+        end
+
+        def hash
+          self.class.hash ^ label.hash ^ stmt.hash
+        end
       end
     end
 
@@ -71,11 +75,11 @@ module Contror
 
     def add_edge(source:, destination:, label: nil)
       if source.is_a?(ANF::AST::Stmt::Base)
-        source = Vertex.new(stmt: source)
+        source = Vertex::Stmt.new(stmt: source)
       end
 
       if destination.is_a?(ANF::AST::Stmt::Base)
-        destination = Vertex.new(stmt: destination)
+        destination = Vertex::Stmt.new(stmt: destination)
       end
 
       Edge.new(source: source, destination: destination, label: label).tap do |edge|

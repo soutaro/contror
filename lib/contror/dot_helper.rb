@@ -12,7 +12,7 @@ module Contror
       case vertex
       when Symbol
         "\"#{graph.__id__}@#{vertex.to_s}\""
-      when Graph::Vertex
+      when Graph::Vertex::Stmt
         "\"#{graph.__id__}@#{vertex.stmt.dest}@#{vertex.label || "-"}\""
       end
     end
@@ -25,7 +25,7 @@ module Contror
                 else
                   "[toplevel]:#{vertex}"
                 end
-              when Graph::Vertex
+              when Graph::Vertex::Stmt
                 vertex_caption(vertex)
               else
                 raise "Unexpected vertex: #{vertex.class}"
@@ -34,7 +34,7 @@ module Contror
       shape = case vertex
               when Symbol
                 "circle"
-              when Graph::Vertex
+              when Graph::Vertex::Stmt
                 "box"
               end
 
