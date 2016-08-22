@@ -3,12 +3,10 @@ module Contror
     class Edge
       attr_reader :source
       attr_reader :destination
-      attr_reader :label
 
-      def initialize(source:, destination:, label: nil)
+      def initialize(source:, destination:)
         @source = source
         @destination = destination
-        @label = label
       end
 
       def eql?(other)
@@ -16,11 +14,11 @@ module Contror
       end
 
       def ==(other)
-        other.is_a?(self.class) && source == other.source && destination == other.destination && label == other.label
+        other.is_a?(self.class) && source == other.source && destination == other.destination
       end
 
       def hash
-        self.class.hash ^ label.hash ^ source.hash ^ destination.hash
+        self.class.hash ^ source.hash ^ destination.hash
       end
     end
 
@@ -31,9 +29,8 @@ module Contror
         attr_reader :stmt
         attr_reader :label
 
-        def initialize(stmt:, label: nil)
+        def initialize(stmt:)
           @stmt = stmt
-          @label = label
         end
 
         def eql?(other)
@@ -41,11 +38,27 @@ module Contror
         end
 
         def ==(other)
-          other.is_a?(self.class) && stmt == other.stmt && label == other.label
+          other.is_a?(self.class) && stmt == other.stmt
         end
 
         def hash
-          self.class.hash ^ label.hash ^ stmt.hash
+          self.class.hash ^ stmt.hash
+        end
+      end
+
+      class Label < Base
+        attr_reader :label
+
+        def initialize(label:)
+          @label = label
+        end
+      end
+
+      class Special < Base
+        attr_reader :type
+
+        def initialize(type:)
+          @type = type
         end
       end
     end
@@ -61,8 +74,8 @@ module Contror
       @edges = Set.new
       @vertexes = Set.new
 
-      @start = :start
-      @end = :end
+      @start = Vertex::Special.new(type: :start)
+      @end = Vertex::Special.new(type: :end)
     end
 
     def each_edge(&block)
@@ -73,7 +86,7 @@ module Contror
       vertexes.each &block
     end
 
-    def add_edge(source:, destination:, label: nil)
+    def add_edge(source:, destination:)
       if source.is_a?(ANF::AST::Stmt::Base)
         source = Vertex::Stmt.new(stmt: source)
       end
@@ -82,7 +95,7 @@ module Contror
         destination = Vertex::Stmt.new(stmt: destination)
       end
 
-      Edge.new(source: source, destination: destination, label: label).tap do |edge|
+      Edge.new(source: source, destination: destination).tap do |edge|
         @vertexes << edge.source
         @vertexes << edge.destination
         @edges << edge

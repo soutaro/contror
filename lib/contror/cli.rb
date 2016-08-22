@@ -58,7 +58,7 @@ module Contror
         graph.each_edge do |edge|
           src = helper.vertex_id(edge.source)
           dest = helper.vertex_id(edge.destination)
-          puts "#{src} -> #{dest}#{helper.edge_option(edge)};"
+          puts "#{src} -> #{dest};"
         end
       end
 

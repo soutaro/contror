@@ -48,12 +48,14 @@ module Contror
       def build_block(stmt)
         graph = Graph.new(stmt: stmt)
 
-        graph.add_edge(source: :start, destination: stmt)
-        push_return_destination :jump_error do
-          push_break_destination :jump_error do
-            push_retry_destination :jump_error do
-              push_next_destination :jump_error do
-                build(graph, stmt, to: :end)
+        jump_error = Vertex::Special.new(type: :jump_error)
+
+        graph.add_edge(source: graph.start, destination: stmt)
+        push_return_destination jump_error do
+          push_break_destination jump_error do
+            push_retry_destination jump_error do
+              push_next_destination jump_error do
+                build(graph, stmt, to: graph.end)
               end
             end
           end
@@ -65,19 +67,21 @@ module Contror
       def build_def(stmt)
         graph = Graph.new(stmt: stmt)
 
+        jump_error = Vertex::Special.new(type: :jump_error)
+
         if stmt.body
-          graph.add_edge source: :start, destination: stmt.body
-          push_return_destination :end do
-            push_break_destination :jump_error do
-              push_retry_destination :jump_error do
-                push_next_destination :jump_error do
-                  build graph, stmt.body, to: :end
+          graph.add_edge source: graph.start, destination: stmt.body
+          push_return_destination graph.end do
+            push_break_destination jump_error do
+              push_retry_destination jump_error do
+                push_next_destination jump_error do
+                  build graph, stmt.body, to: graph.end
                 end
               end
             end
           end
         else
-          graph.add_edge(source: :start, destination: :end)
+          graph.add_edge(source: graph.start, destination: graph.end)
         end
 
         graphs << graph
@@ -160,10 +164,10 @@ module Contror
           build(graph, stmt.body, to: to)
 
         when ANF::AST::Stmt::If
-          if_cond_end = Vertex::Stmt.new(stmt: stmt, label: :cond_end)
-          if_then = Vertex::Stmt.new(stmt: stmt, label: :then)
-          if_else = Vertex::Stmt.new(stmt: stmt, label: :else)
-          if_end = Vertex::Stmt.new(stmt: stmt, label: :end)
+          if_cond_end = Vertex::Label.new(label: :cond_end)
+          if_then = Vertex::Label.new(label: :then)
+          if_else = Vertex::Label.new(label: :else)
+          if_end = Vertex::Label.new(label: :end)
 
           graph.add_edge source: stmt, destination: stmt.condition
           build graph, stmt.condition, to: if_cond_end
@@ -187,7 +191,7 @@ module Contror
           graph.add_edge source: if_end, destination: to
 
         when ANF::AST::Stmt::Case
-          cond_end = Vertex::Stmt.new(stmt: stmt, label: :cond_end)
+          cond_end = Vertex::Label.new(label: :cond_end)
 
           if stmt.condition
             graph.add_edge source: stmt, destination: stmt.condition
@@ -197,12 +201,12 @@ module Contror
           end
 
           vertex = cond_end
-          case_end = Vertex::Stmt.new(stmt: stmt, label: :end)
+          case_end = Vertex::Label.new(label: :end)
 
           stmt.whens.each do |w|
             if w.pattern
-              case_pattern = Vertex::Stmt.new(stmt: w.pattern, label: :case_pattern)
-              case_body = Vertex::Stmt.new(stmt: w.body, label: :case_body)
+              case_pattern = Vertex::Label.new(label: :case_pattern)
+              case_body = Vertex::Label.new(label: :case_body)
 
               graph.add_edge source: vertex, destination: case_pattern
               graph.add_edge source: case_pattern, destination: w.pattern
@@ -222,9 +226,9 @@ module Contror
 
         when ANF::AST::Stmt::Call
           if stmt&.block&.body
-            block_start = Vertex::Stmt.new(stmt: stmt, label: :block_start)
-            block_end = Vertex::Stmt.new(stmt: stmt, label: :block_end)
-            block_exit = Vertex::Stmt.new(stmt: stmt, label: :end)
+            block_start = Vertex::Label.new(label: :block_start)
+            block_end = Vertex::Label.new(label: :block_end)
+            block_exit = Vertex::Label.new(label: :end)
 
             graph.add_edge source: stmt, destination: block_start
             graph.add_edge source: block_start, destination: stmt.block.body
@@ -245,7 +249,7 @@ module Contror
 
         when ANF::AST::Stmt::Rescue
           if stmt.body
-            begin_start = Vertex::Stmt.new(stmt: stmt, label: :begin_start)
+            begin_start = Vertex::Label.new(label: :begin_start)
 
             graph.add_edge source: stmt, destination: begin_start, label: :begin
             graph.add_edge source: begin_start, destination: stmt.body
@@ -279,8 +283,8 @@ module Contror
           end
 
         when ANF::AST::Stmt::Ensure
-          ensuring = Vertex::Stmt.new(stmt: stmt, label: :ensuring)
-          ensure_end = Vertex::Stmt.new(stmt: stmt, label: :end)
+          ensuring = Vertex::Label.new(label: :ensuring)
+          ensure_end = Vertex::Label.new(label: :end)
 
           if stmt.ensured
             graph.add_edge source: stmt, destination: stmt.ensured
@@ -299,11 +303,11 @@ module Contror
           graph.add_edge source: ensure_end, destination: to
 
         when ANF::AST::Stmt::For
-          loop_start = Vertex::Stmt.new(stmt: stmt, label: :for_start)
-          loop_end = Vertex::Stmt.new(stmt: stmt, label: :for_end)
-          loop_exit = Vertex::Stmt.new(stmt: stmt, label: :for_exit)
+          loop_start = Vertex::Label.new(label: :for_start)
+          loop_end = Vertex::Label.new(label: :for_end)
+          loop_exit = Vertex::Label.new(label: :for_exit)
 
-          graph.add_edge source: stmt, destination: stmt.collection, label: :for_collection
+          graph.add_edge source: stmt, destination: stmt.collection
           build graph, stmt.collection, to: loop_start
 
           if stmt.body
@@ -324,9 +328,9 @@ module Contror
           graph.add_edge source: loop_exit, destination: to
 
         when ANF::AST::Stmt::Loop
-          loop_start = Vertex::Stmt.new(stmt: stmt, label: :loop_start)
-          loop_end = Vertex::Stmt.new(stmt: stmt, label: :loop_end)
-          loop_exit = Vertex::Stmt.new(stmt: stmt, label: :loop_exit)
+          loop_start = Vertex::Label.new(label: :loop_start)
+          loop_end = Vertex::Label.new(label: :loop_end)
+          loop_exit = Vertex::Label.new(label: :loop_exit)
 
           graph.add_edge source: stmt, destination: loop_start
 

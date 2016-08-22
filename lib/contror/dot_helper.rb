@@ -10,21 +10,25 @@ module Contror
 
     def vertex_id(vertex)
       case vertex
-      when Symbol
-        "\"#{graph.__id__}@#{vertex.to_s}\""
+      when Graph::Vertex::Label
+        vertex.__id__.to_s
+      when Graph::Vertex::Special
+        vertex.__id__.to_s
       when Graph::Vertex::Stmt
-        "\"#{graph.__id__}@#{vertex.stmt.dest}@#{vertex.label || "-"}\""
+        "\"#{graph.__id__}@#{vertex.stmt.dest}\""
       end
     end
 
     def vertex_decl(vertex)
       label = case vertex
-              when Symbol
+              when Graph::Vertex::Special
                 if graph.stmt.is_a?(ANF::AST::Stmt::Def)
-                  "#{graph.stmt.name}:#{vertex}"
+                  "#{graph.stmt.name}:#{vertex.type}"
                 else
-                  "[toplevel]:#{vertex}"
+                  "[toplevel]:#{vertex.type}"
                 end
+              when Graph::Vertex::Label
+                ":#{vertex.label}"
               when Graph::Vertex::Stmt
                 vertex_caption(vertex)
               else
@@ -32,13 +36,20 @@ module Contror
               end
 
       shape = case vertex
-              when Symbol
+              when Graph::Vertex::Special
                 "circle"
-              when Graph::Vertex::Stmt
+              when Graph::Vertex::Stmt, Graph::Vertex::Label
                 "box"
               end
 
-      "#{vertex_id(vertex)}[label=\"#{label}\", shape=#{shape}];"
+      fontcolor = case vertex
+                  when Graph::Vertex::Label
+                    "#808080"
+                  else
+                    "#000000"
+                  end
+
+      "#{vertex_id(vertex)}[label=\"#{label}\", shape=#{shape}, fontcolor=\"#{fontcolor}\"];"
     end
 
     def vertex_caption(v)
@@ -46,7 +57,6 @@ module Contror
       loc = v.stmt.node&.loc&.try {|l|
         "#{l.first_line}:#{l.column}"
       }
-      label = v.label
 
       suffix = case v.stmt
                when ANF::AST::Stmt::Call
@@ -63,15 +73,7 @@ module Contror
                  nil
                end
 
-      "#{v.stmt.dest}#{s}#{label && "(#{label})"}:#{loc}#{suffix && ":" + suffix}"
-    end
-
-    def edge_option(edge)
-      if edge.label
-        "[label=\"#{edge.label}\"]"
-      else
-        ""
-      end
+      "#{v.stmt.dest}#{s}:#{loc}#{suffix && ":" + suffix}"
     end
   end
 end
